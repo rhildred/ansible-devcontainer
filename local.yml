@@ -1,0 +1,40 @@
+---
+- name: Deploy Forgejo, Coder, and CUDA Environment
+  hosts: gpu_server
+  become: true
+  tasks:
+    - name: Install Docker via official script
+      shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Install NVIDIA Container Toolkit
+      shell: |
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+        sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+        apt-get update && apt-get install -y nvidia-container-toolkit
+      args:
+        creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+    - name: Configure Docker to use NVIDIA runtime
+      shell: nvidia-ctk runtime configure --runtime=docker && systemctl restart docker
+      changed_when: true
+
+    - name: Install Forgejo via EasyForgejo script
+      shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash
+      args:
+        creates: /usr/local/bin/forgejo
+
+    - name: Install Coder via official script
+      shell: curl -L https://coder.com/install.sh | sh
+      args:
+        creates: /usr/bin/coder
+
+    - name: Setup and start Coder
+      systemd:
+        name: coder
+        state: started
+        enabled: yes
+        daemon_reload: yes
