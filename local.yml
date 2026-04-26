@@ -44,28 +44,6 @@
           - docker-compose-plugin
         update_cache: yes
 
-    # 2. NVIDIA Container Toolkit
-    - name: Download NVIDIA GPG key
-      ansible.builtin.get_url:
-        url: https://github.io
-        dest: /etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg
-        mode: '0644'
-
-    - name: Add NVIDIA repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg] https://github.io /"
-        state: present
-        filename: nvidia-container-toolkit
-
-    - name: Install NVIDIA Container Toolkit
-      ansible.builtin.apt:
-        name: nvidia-container-toolkit
-        update_cache: yes
-
-    - name: Configure Docker NVIDIA runtime
-      ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
-      notify: Restart Docker
-
     - name: Install Forgejo via EasyForgejo script
       shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash
       args:
