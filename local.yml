@@ -1,6 +1,6 @@
 ---
 - name: Deploy Forgejo, Coder, and CUDA Environment
-  hosts: gpu_server
+  hosts: localhost
   become: true
   tasks:
     - name: Install Docker via official script
