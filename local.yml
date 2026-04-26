@@ -3,57 +3,55 @@
   hosts: localhost
   become: true
   tasks:
-    - name: Install prerequisite packages
-      apt:
-        name:
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: yes
+    - name: Ensure keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
 
-    - name: Download Docker's official GPG key
-      get_url:
-        url: https://docker.com
-        dest: /usr/share/keyrings/docker-archive-keyring.gpg
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
 
-    - name: Add Docker repository (using signed-by)
-      apt_repository:
-        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://docker.com {{ ansible_distribution_release }} stable"
+    - name: Add Docker repository (Noble)
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
         state: present
         filename: docker
-        
+
     - name: Install Docker Engine
-      apt:
+      ansible.builtin.apt:
         name:
           - docker-ce
           - docker-ce-cli
           - containerd.io
           - docker-buildx-plugin
           - docker-compose-plugin
-        state: present
         update_cache: yes
 
-    - name: Ensure Docker is started and enabled
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
+    # 2. NVIDIA Container Toolkit
+    - name: Download NVIDIA GPG key
+      ansible.builtin.get_url:
+        url: https://github.io
+        dest: /etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg
+        mode: '0644'
+
+    - name: Add NVIDIA repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg] https://github.io /"
+        state: present
+        filename: nvidia-container-toolkit
 
     - name: Install NVIDIA Container Toolkit
-      shell: |
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-        sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-        apt-get update && apt-get install -y nvidia-container-toolkit
-      args:
-        creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      ansible.builtin.apt:
+        name: nvidia-container-toolkit
+        update_cache: yes
 
-    - name: Configure Docker to use NVIDIA runtime
-      shell: nvidia-ctk runtime configure --runtime=docker && systemctl restart docker
-      changed_when: true
+    - name: Configure Docker NVIDIA runtime
+      ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
+      notify: Restart Docker
 
     - name: Install Forgejo via EasyForgejo script
       shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash
