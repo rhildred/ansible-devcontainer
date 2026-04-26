@@ -3,6 +3,19 @@
   hosts: localhost
   become: true
   tasks:
+    # 1. Clear previous interrupted dpkg states
+    - name: Fix interrupted package installations
+      command: dpkg --configure -a
+      changed_when: false
+
+    # 2. Setup Prerequisites and Repositories
+    - name: Install prerequisite packages
+      apt:
+        name: [ca-certificates, curl, gnupg]
+        state: present
+        update_cache: yes
+
+
     - name: Ensure keyrings directory exists
       ansible.builtin.file:
         path: /etc/apt/keyrings
