@@ -30,6 +30,8 @@
         name: coder
         password: "{{ db_coder_pass }}"
         role_attr_flags: "CREATEDB,SUPERUSER" # Coder needs high privs for migrations
+        login_host: 127.0.0.1  # Force TCP connection instead of unix socket
+        login_user: postgres   # Explicitly use the superuser
       become_user: postgres
 
     - name: Create Coder database
