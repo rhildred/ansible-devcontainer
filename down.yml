@@ -1,0 +1,64 @@
+---
+- name: Remove Forgejo, Coder, and CUDA Environment
+  hosts: localhost
+  become: true
+  vars:
+  tasks:
+    # 1. Clear previous interrupted dpkg states
+    - name: Fix interrupted package installations
+      command: dpkg --configure -a
+      changed_when: false
+
+    - name: Check if Coder service exists
+      ansible.builtin.stat:
+        path: /etc/systemd/system/coder.service
+      register: coder_service_file
+
+    - name: Stop Coder
+      ansible.builtin.systemd:
+        name: coder
+        state: stopped
+        enabled: no
+      when: coder_service_file.stat.exists
+    - name: Remove Coder
+      shell: rm -rf /usr/bin/coder
+      args:
+        removes: /usr/bin/coder
+
+    - name: remove Forgejo via EasyForgejo script
+      shell: curl -sSL https://rhildred.github.io/easyforgejo/install.sh | bash -s -- remove
+      args:
+        removes: /usr/local/bin/forgejo
+
+
+    - name: Remove Docker Engine
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: absent
+
+
+    # 2. Setup Prerequisites and Repositories
+    - name: remove prerequisite packages
+      apt:
+        name: [ca-certificates, gnupg]
+        state: absent
+        update_cache: yes
+
+
+    # 1. Install PostgreSQL and Python bindings (required for Ansible modules)
+    - name: remove PostgreSQL and psycopg2
+      ansible.builtin.apt:
+        name: 
+          - acl
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: absent
+        update_cache: yes
+
+
