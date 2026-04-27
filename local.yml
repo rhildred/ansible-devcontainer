@@ -2,56 +2,7 @@
 - name: Deploy Forgejo, Coder, and CUDA Environment
   hosts: localhost
   become: true
-  vars:
-    # Database credentials (change these!)
-    db_coder_pass: "coder_secure_pass"
-    db_forgejo_pass: "forgejo_secure_pass"
   tasks:
-      # 1. Install PostgreSQL and Python bindings (required for Ansible modules)
-    - name: Install PostgreSQL and psycopg2
-      ansible.builtin.apt:
-        name: 
-          - acl
-          - postgresql
-          - postgresql-contrib
-          - python3-psycopg2
-        state: present
-        update_cache: yes
-
-    - name: Ensure PostgreSQL is running
-      ansible.builtin.systemd:
-        name: postgresql
-        state: started
-        enabled: yes
-
-    # 2. Create Databases and Users
-    - name: Create database user for Coder
-      community.postgresql.postgresql_user:
-        name: coder
-        password: "{{ db_coder_pass }}"
-        role_attr_flags: "CREATEDB,SUPERUSER" # Coder needs high privs for migrations
-        login_host: 127.0.0.1  # Force TCP connection instead of unix socket
-        login_user: postgres   # Explicitly use the superuser
-      become_user: postgres
-
-    - name: Create Coder database
-      community.postgresql.postgresql_db:
-        name: coder
-        owner: coder
-      become_user: postgres
-
-    - name: Create database user for Forgejo
-      community.postgresql.postgresql_user:
-        name: forgejo
-        password: "{{ db_forgejo_pass }}"
-      become_user: postgres
-
-    - name: Create Forgejo database
-      community.postgresql.postgresql_db:
-        name: forgejodb
-        owner: forgejo
-      become_user: postgres
-
     # 1. Clear previous interrupted dpkg states
     - name: Fix interrupted package installations
       command: dpkg --configure -a
@@ -94,32 +45,16 @@
         update_cache: yes
 
     - name: Install Forgejo via EasyForgejo script
-      shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash
+      shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash > tail -23 > FORGEJO.md
       args:
         creates: /usr/local/bin/forgejo
 
-    - name: Install Coder via official script
-      shell: curl -L https://coder.com/install.sh | sh
-      args:
-        creates: /usr/bin/coder
-    # 5. Configure Coder to use External Postgres
-    - name: Create Coder systemd override directory
-      ansible.builtin.file:
-        path: /etc/systemd/system/coder.service.d
-        state: directory
-        mode: '0755'
+    - name: Get status of the file
+      ansible.builtin.stat:
+        path: FORGEJO.md
+      register: file_info
 
-    - name: Link Coder to external database
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/coder.service.d/override.conf
-        content: |
-          [Service]
-          Environment="CODER_PG_CONNECTION_URL=postgres://coder:{{ db_coder_pass }}@localhost:5432/coder?sslmode=disable"
-          TimeoutStartSec=300
-
-    - name: Setup and start Coder
-      systemd:
-        name: coder
-        state: started
-        enabled: yes
-        daemon_reload: yes
+    - name: Debug if file exists
+      ansible.builtin.debug:
+        msg: "Read FORGEJO.md for further instructions."
+      when: file_info.stat.exists
