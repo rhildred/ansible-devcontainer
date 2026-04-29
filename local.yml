@@ -45,7 +45,7 @@
         update_cache: yes
 
     - name: Install Forgejo via EasyForgejo script
-      shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash > tail -23 > FORGEJO.md
+      shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash | tail -23 > FORGEJO.md
       args:
         creates: /usr/local/bin/forgejo
 
