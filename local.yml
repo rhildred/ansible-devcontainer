@@ -43,6 +43,19 @@
           - docker-buildx-plugin
           - docker-compose-plugin
         update_cache: yes
+    - name: Ensure the docker group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+
+    - name: Add the current user to the docker group
+      ansible.builtin.user:
+        # Use ansible_user (the user used for login) or lookup env USER
+        name: "{{ ansible_user | default(lookup('env', 'USER')) }}"
+        groups: docker
+        append: yes
+      notify: refresh_ssh
+
 
     - name: Install Forgejo via EasyForgejo script
       shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash | tail -23 > FORGEJO.md
@@ -58,3 +71,7 @@
       ansible.builtin.debug:
         msg: "Read FORGEJO.md for further instructions."
       when: file_info.stat.exists
+
+  handlers:
+    - name: refresh_ssh
+      ansible.builtin.meta: reset_connection
