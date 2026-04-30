@@ -1,11 +1,13 @@
 {
     "name": "economic_chicken",
     "image": "mcr.microsoft.com/devcontainers/universal",
+    "workspaceFolder":"/workspaces/ansible-forgejo",
     "features": {
         "ghcr.io/coder/devcontainer-features/code-server:1": {
             "port": 8080,
             "auth":"none",
-            "host":"0.0.0.0"
+            "host":"0.0.0.0",
+            "workspace": "/workspaces/ansible-forgejo"
         }
     },
     // Use runArgs for port publishing to ensure visibility in 'docker ps'
