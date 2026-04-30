@@ -1,0 +1,21 @@
+{
+  "name": "economic_chicken",
+  "image": "mcr.microsoft.com/devcontainers/universal",
+  "features": {
+    "ghcr.io/coder/devcontainer-features/code-server:2": {
+      "auth": "none",
+      "port": 8080
+    }
+  },
+  "appPort": [
+    8080
+  ],
+  "runArgs": [
+    "-p", "8080:8080",
+    "--hostname=economic_chicken",
+    "--network=devcontainer_network",
+    "--network-alias=economic_chicken.k3p.dev"
+  ],
+  "remoteUser": "codespace",
+  "containerUser": "codespace"
+}

@@ -1,0 +1,27 @@
+{
+    "name": "economic_chicken",
+    "image": "mcr.microsoft.com/devcontainers/universal",
+    "features": {
+        "ghcr.io/coder/devcontainer-features/code-server:1": {
+            "port": 8080,
+            "auth":"none",
+            "host":"0.0.0.0"
+        }
+    },
+    // Use runArgs for port publishing to ensure visibility in 'docker ps'
+    // Remove 'appPort' to avoid conflicts
+    "runArgs": [
+        "--publish",
+        "8080:8080",
+        "--hostname",
+        "economic_chicken",
+        "--network",
+        "devcontainer_network",
+        "--network-alias",
+        "economic_chicken.k3p.dev"
+    ],
+    "remoteUser": "codespace",
+    "containerUser": "codespace",
+    // Ensure the network exists before the container starts
+    "initializeCommand": "docker network create devcontainer_network || true"
+}
