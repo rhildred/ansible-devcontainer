@@ -33,4 +33,13 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
+proxy.on('error', (err, req, res) => {
+  console.error('Proxy Error:', err.message);
+  // If it's a standard HTTP request, send a 502
+  if (res.writeHead && !res.headersSent) {
+    res.writeHead(502);
+    res.end('Bad Gateway');
+  }
+});
+
 server.listen(8000);
