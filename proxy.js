@@ -1,55 +1,104 @@
 import express from 'express';
-import session from 'express-session';
+import cookieSession from 'cookie-session';
 import passport from 'passport';
 import { Strategy as OAuth2Strategy } from 'passport-oauth2';
 import httpProxy from 'http-proxy';
+import axios from 'axios';
 
 const FORGEJO_URL = 'https://f5o.k3p.dev';
+const DOMAIN = '.k3p.dev'; // Leading dot is critical for subdomain sharing
 const proxy = httpProxy.createProxyServer({});
 const app = express();
 
-// 1. Session & Passport Setup
-app.use(session({ secret: 'keyboard cat', resave: false, saveUninitialized: false }));
+// 1. Mandatory for HTTPS cookies behind a proxy
+app.set('trust proxy', 1);
+
+// 2. Cookie-based Session (Stateless)
+app.use(cookieSession({
+  name: 'k3p_session',
+  keys: ['EOP0XZ4XWVMXODNS0GJJ35WYZ3AZ2K42'], // Use a secure secret
+  domain: DOMAIN,
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  secure: true,                // Required for HTTPS
+  httpOnly: true,              // Prevents XSS
+  sameSite: 'lax'              // Allows cookie during OAuth redirect
+}));
+
+// SHIM: cookie-session doesn't have regenerate/save, but Passport wants them
+app.use((req, res, next) => {
+  if (req.session && !req.session.regenerate) {
+    req.session.regenerate = (cb) => cb();
+  }
+  if (req.session && !req.session.save) {
+    req.session.save = (cb) => cb();
+  }
+  next();
+});
+
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((obj, done) => done(null, obj));
-
-// 2. Configure Forgejo OAuth2 Strategy
+// 3. Forgejo OAuth2 Configuration
 passport.use('forgejo', new OAuth2Strategy({
     authorizationURL: `${FORGEJO_URL}/login/oauth/authorize`,
     tokenURL: `${FORGEJO_URL}/login/oauth/access_token`,
     clientID: 'af4e510e-fecc-40e6-a306-dfa12a47cca2',
     clientSecret: 'gto_yhbxmk5coaxsdgdummk75voqmxsikziwmh7tncqwy4nbeziugmta',
-    callbackURL: 'https://oauth.k3p.dev/auth/callback'
+    callbackURL: 'https://k3p.dev/auth/callback'
   },
-  (accessToken, refreshToken, profile, done) => {
-    // For simple proxying, we just need to know they authenticated
-    return done(null, { token: accessToken });
+  async (accessToken, refreshToken, profile, done) => {
+    try {
+      // Fetch user info from Forgejo API since profile is often empty in OAuth2
+      const { data } = await axios.get(`${FORGEJO_URL}/api/v1/user`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      return done(null, { username: data.username });
+    } catch (err) {
+      return done(err);
+    }
   }
 ));
 
-// 3. Auth Routes
-app.get('/login', passport.authenticate('forgejo'));
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
+
+// 4. Auth Routes
+app.get('/login', (req, res, next) => {
+  // Ensure the returnTo URL is absolute for subdomain redirects
+  if (!req.session.returnTo) {
+    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path}`;
+  }
+  passport.authenticate('forgejo')(req, res, next);
+});
+
 app.get('/auth/callback', 
   passport.authenticate('forgejo', { failureRedirect: '/login' }),
-  (req, res) => res.redirect('/')
+  (req, res) => {
+    const destination = req.session.returnTo || `https://k3p.dev`;
+    delete req.session.returnTo;
+    res.redirect(destination);
+  }
 );
 
-// 4. Integrated Proxy Logic
-const getTarget = (sHost) => "http://localhost:8080";
+// 5. Proxy Logic
+const getTarget = (host) => "http://localhost:8080";
 
-const server = app.all('{*path}', (req, res, next) => {
-  if (!req.isAuthenticated()) {
-    return res.redirect('/login');
+app.all(/^(?!\/login|\/auth\/callback).*$/, (req, res) => {
+  // bypass for auth paths
+  if (['/login', '/auth/callback'].includes(req.path)) return;
+
+  if (req.isAuthenticated()) {
+    return proxy.web(req, res, { target: getTarget(req.headers.host) });
   }
 
-  const target = getTarget(req.headers.host);
-  proxy.web(req, res, { target });
-}).listen(8000);
+  // Not authenticated: Store current canonical URL and redirect
+  req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path}`;
+  res.redirect('https://k3p.dev/login');
+});
 
-// 5. Secure WebSocket Upgrades
+const server = app.listen(8000, () => console.log('Proxy running on port 8000'));
+
 server.on('upgrade', (req, socket, head) => {
   // Simple check: Cookies are sent with the upgrade request
   if (!req.headers.cookie) return socket.destroy();
@@ -65,3 +114,4 @@ proxy.on('error', (err, req, res) => {
     res.end('Bad Gateway');
   }
 });
+
