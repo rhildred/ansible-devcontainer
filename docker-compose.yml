@@ -8,7 +8,21 @@ services:
     environment:
       - NODE_ENV=production
     restart: always
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: devteds@pgadmin.org
+      PGADMIN_DEFAULT_PASSWORD: devteds      
+      PGADMIN_CONFIG_WTF_CSRF_HEADERS: '["Referer", "Origin"]'
+      PGADMIN_CONFIG_WTF_CSRF_ENABLED: 'False'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - 5060:80
 
 networks:
   proxy-tier:
     name: proxy-tier  # Explicitly named so other 'docker run' commands can find it
+volumes:
+  pgadmin-data:

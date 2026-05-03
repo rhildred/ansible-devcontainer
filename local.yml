@@ -2,6 +2,11 @@
 - name: Deploy Forgejo, Coder, and CUDA Environment
   hosts: localhost
   become: true
+  vars:
+    # Database credentials (change these!)
+    db_forgejo_pass: "Cid1wchn" 
+    pg_hba_path: "/etc/postgresql/16/main/pg_hba.conf"
+ 
   tasks:
     # 1. Clear previous interrupted dpkg states
     - name: Fix interrupted package installations
@@ -56,6 +61,54 @@
         append: yes
       notify: refresh_ssh
 
+      # 1. Install PostgreSQL and Python bindings (required for Ansible modules)
+    - name: Install PostgreSQL and psycopg2
+      ansible.builtin.apt:
+        name: 
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+        update_cache: yes
+
+    - name: Ensure PostgreSQL is running
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    # 2. Create Databases and Users
+
+    - name: Create database user for Forgejo
+      community.postgresql.postgresql_user:
+        name: forgejo
+        password: "{{ db_forgejo_pass }}"
+      become_user: postgres
+
+    - name: Create Forgejo database
+      community.postgresql.postgresql_db:
+        name: forgejodb
+        owner: forgejo
+      become_user: postgres
+
+    - name: Configure Postgres to listen on all IPv4 addresses
+      community.postgresql.postgresql_set:
+        name: listen_addresses
+        value: "*"
+      become_user: postgres
+      notify: Restart PostgreSQL
+
+    - name: Allow all IPv4 addresses in pg_hba.conf
+      community.postgresql.postgresql_pg_hba:
+        dest: "{{ pg_hba_path }}"
+        contype: host
+        databases: all
+        users: all
+        source: "0.0.0.0/0"
+        method: scram-sha-256
+      become_user: postgres
+      notify: Restart PostgreSQL
+
 
     - name: Install Forgejo via EasyForgejo script
       shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash | tail -23 > FORGEJO.md
@@ -75,3 +128,7 @@
   handlers:
     - name: refresh_ssh
       ansible.builtin.meta: reset_connection
+    - name: Restart PostgreSQL
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted
