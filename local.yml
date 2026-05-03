@@ -91,6 +91,31 @@
         owner: forgejo
       become_user: postgres
 
+    - name: Create the table for devcontainers
+      community.postgresql.postgresql_table:
+        db: "forgejodb"
+        name: "devcontainers"
+        columns:
+          - id TEXT primary key
+          - username text not null
+          - branch text not null
+          - repo_url TEXT not null
+          - accessed_at timestamp default now()
+          - created_at timestamp default now()
+        state: present
+      become: true
+      become_user: postgres
+
+    - name: Create a standard index on username
+      community.postgresql.postgresql_idx:
+        db: forgejodb
+        table: devcontainers
+        columns: username
+        name: idx_username
+        state: present
+      become: yes
+      become_user: postgres      
+
     - name: Configure Postgres to listen on all IPv4 addresses
       community.postgresql.postgresql_set:
         name: listen_addresses

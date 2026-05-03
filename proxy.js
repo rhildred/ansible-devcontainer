@@ -93,12 +93,12 @@ app.get('/auth/callback',
 app.post('/new_devcontainer', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
 
-  const { repoUrl, branch } = req.body;
+  const { repo_url, branch } = req.body;
   const token = req.session.passport.user.token;
 
   
   // 1. Prepare target directory
-  const repoName = repoUrl.split('/').pop().replace('.git', '');
+  const repoName = repo_url.split('/').pop().replace('.git', '');
   const targetDir = path.join(process.cwd(), 'temp_repos', `${repoName}_${Date.now()}`);
   
   try {
@@ -106,7 +106,7 @@ app.post('/new_devcontainer', async (req, res) => {
 
     // 2. Build Authenticated URL
     // Forgejo/Gitea uses 'oauth2' as the username for Git-over-HTTPS
-    const url = new URL(repoUrl);
+    const url = new URL(repo_url);
     url.username = 'oauth2';
     url.password = token;
 
