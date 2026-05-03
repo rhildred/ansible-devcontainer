@@ -4,6 +4,11 @@ import passport from 'passport';
 import { Strategy as OAuth2Strategy } from 'passport-oauth2';
 import httpProxy from 'http-proxy';
 import axios from 'axios';
+import simpleGit from 'simple-git';
+import path from 'path';
+import fs from 'fs';
+
+
 
 const FORGEJO_URL = 'https://f5o.k3p.dev';
 const DOMAIN = '.k3p.dev'; // Leading dot is critical for subdomain sharing
@@ -12,6 +17,10 @@ const app = express();
 
 // 1. Mandatory for HTTPS cookies behind a proxy
 app.set('trust proxy', 1);
+
+// Parse form data
+app.use(express.urlencoded({ extended: true }));
+
 
 // 2. Cookie-based Session (Stateless)
 app.use(cookieSession({
@@ -53,7 +62,7 @@ passport.use('forgejo', new OAuth2Strategy({
       const { data } = await axios.get(`${FORGEJO_URL}/api/v1/user`, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
-      return done(null, { username: data.username });
+      return done(null, { username: data.username, token: accessToken });
     } catch (err) {
       return done(err);
     }
@@ -81,6 +90,41 @@ app.get('/auth/callback',
   }
 );
 
+app.post('/new_devcontainer', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+
+  const { repoUrl, branch } = req.body;
+  const token = req.session.passport.user.token;
+
+  
+  // 1. Prepare target directory
+  const repoName = repoUrl.split('/').pop().replace('.git', '');
+  const targetDir = path.join(process.cwd(), 'temp_repos', `${repoName}_${Date.now()}`);
+  
+  try {
+    await fs.promises.mkdir(targetDir, { recursive: true });
+
+    // 2. Build Authenticated URL
+    // Forgejo/Gitea uses 'oauth2' as the username for Git-over-HTTPS
+    const url = new URL(repoUrl);
+    url.username = 'oauth2';
+    url.password = token;
+
+    // 3. Simple Checkout
+    const git = simpleGit();
+    await git.clone(url.toString(), targetDir, [
+      '--branch', branch,
+      '--single-branch',
+      '--depth', '1' // Shallow clone for speed
+    ]);
+
+    res.end(`Successfully checked out ${branch} to ${targetDir}`);
+  } catch (err) {
+    console.error('Git Error:', err);
+    res.status(500).send(`Checkout failed: ${err.message}`);
+  }
+});
+
 // 5. Proxy Logic
 const getTarget = (host) => "http://localhost:8080";
 
@@ -97,7 +141,7 @@ app.all(/^(?!\/login|\/auth\/callback).*$/, (req, res) => {
   res.redirect('https://k3p.dev/login');
 });
 
-const server = app.listen(8000, () => console.log('Proxy running on port 8000'));
+const server = app.listen(8000, () => console.log('Proxy running'));
 
 server.on('upgrade', (req, socket, head) => {
   // Simple check: Cookies are sent with the upgrade request

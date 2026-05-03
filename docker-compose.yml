@@ -1,0 +1,14 @@
+services:
+  node-proxy:
+    build: .
+    ports:
+      - "80:8000"    # Map host port 80 to proxy port 8000
+    networks:
+      - proxy-tier
+    environment:
+      - NODE_ENV=production
+    restart: always
+
+networks:
+  proxy-tier:
+    name: proxy-tier  # Explicitly named so other 'docker run' commands can find it
