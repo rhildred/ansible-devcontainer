@@ -7,7 +7,7 @@ import axios from 'axios';
 import simpleGit from 'simple-git';
 import path from 'path';
 import fs from 'fs';
-
+import ViteExpress from "vite-express";
 
 
 const FORGEJO_URL = 'https://f5o.k3p.dev';
@@ -90,6 +90,10 @@ app.get('/auth/callback',
   }
 );
 
+app.get("/hello", (req, res) => {
+  res.send("Hello Vite + React!");
+});
+
 app.post('/new_devcontainer', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
 
@@ -128,7 +132,7 @@ app.post('/new_devcontainer', async (req, res) => {
 // 5. Proxy Logic
 const getTarget = (host) => "http://localhost:8080";
 
-app.all(/^(?!\/login|\/auth\/callback).*$/, (req, res) => {
+app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, (req, res) => {
   // bypass for auth paths
   if (['/login', '/auth/callback'].includes(req.path)) return;
 
@@ -141,7 +145,7 @@ app.all(/^(?!\/login|\/auth\/callback).*$/, (req, res) => {
   res.redirect('https://k3p.dev/login');
 });
 
-const server = app.listen(8000, () => console.log('Proxy running'));
+const server = ViteExpress.listen(app, 8000, () => console.log('Proxy running'));
 
 server.on('upgrade', (req, socket, head) => {
   // Simple check: Cookies are sent with the upgrade request
