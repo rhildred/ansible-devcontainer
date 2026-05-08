@@ -4,9 +4,7 @@ import passport from 'passport';
 import { Strategy as OAuth2Strategy } from 'passport-oauth2';
 import httpProxy from 'http-proxy';
 import axios from 'axios';
-import simpleGit from 'simple-git';
-import path from 'path';
-import fs from 'fs';
+import { CRUDDevcontainer } from "./CRUDDevcontainer.js";
 import ViteExpress from "vite-express";
 
 
@@ -94,39 +92,9 @@ app.get("/hello", (req, res) => {
   res.send("Hello Vite + React!");
 });
 
-app.post('/new_devcontainer', async (req, res) => {
+app.post('/api/devcontainers', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
-
-  const { repo_url, branch } = req.body;
-  const token = req.session.passport.user.token;
-
-  
-  // 1. Prepare target directory
-  const repoName = repo_url.split('/').pop().replace('.git', '');
-  const targetDir = path.join(process.cwd(), 'temp_repos', `${repoName}_${Date.now()}`);
-  
-  try {
-    await fs.promises.mkdir(targetDir, { recursive: true });
-
-    // 2. Build Authenticated URL
-    // Forgejo/Gitea uses 'oauth2' as the username for Git-over-HTTPS
-    const url = new URL(repo_url);
-    url.username = 'oauth2';
-    url.password = token;
-
-    // 3. Simple Checkout
-    const git = simpleGit();
-    await git.clone(url.toString(), targetDir, [
-      '--branch', branch,
-      '--single-branch',
-      '--depth', '1' // Shallow clone for speed
-    ]);
-
-    res.end(`Successfully checked out ${branch} to ${targetDir}`);
-  } catch (err) {
-    console.error('Git Error:', err);
-    res.status(500).send(`Checkout failed: ${err.message}`);
-  }
+  await CRUDDevcontainer(req, res);
 });
 
 // 5. Proxy Logic
