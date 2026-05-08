@@ -3,7 +3,7 @@ import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generato
 
 const filePath = './.devcontainer/devcontainer.json';
 
-async function updateJson() {
+export async function updateJson() {
     try {
         // 1. Read and parse
         let data = {};

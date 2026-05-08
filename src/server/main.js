@@ -145,6 +145,13 @@ app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, (req, res) =
   res.redirect('https://k3p.dev/login');
 });
 
+ViteExpress.config({ 
+  base: "/devcontainers/",      // Matches your vite.config.js 'base'
+  inlineViteConfig: {
+    base: "/devcontainers/"    // Ensure Vite logic knows the base during runtime
+  }
+});
+
 const server = ViteExpress.listen(app, 8000, () => console.log('Proxy running'));
 
 server.on('upgrade', (req, socket, head) => {
