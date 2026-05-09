@@ -6,10 +6,11 @@ import httpProxy from 'http-proxy';
 import axios from 'axios';
 import { CRUDDevcontainer } from "./CRUDDevcontainer.js";
 import ViteExpress from "vite-express";
+import 'dotenv/config';
 
 
-const FORGEJO_URL = 'https://f5o.k3p.dev';
-const DOMAIN = '.k3p.dev'; // Leading dot is critical for subdomain sharing
+const FORGEJO_URL = process.env.FORGEJO_URL;
+const DOMAIN = process.env.DOMAIN; // Leading dot is critical for subdomain sharing
 const proxy = httpProxy.createProxyServer({});
 const app = express();
 
@@ -22,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // 2. Cookie-based Session (Stateless)
 app.use(cookieSession({
-  name: 'k3p_session',
+  name: 'devcontainer_session',
   keys: ['EOP0XZ4XWVMXODNS0GJJ35WYZ3AZ2K42'], // Use a secure secret
   domain: DOMAIN,
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -50,9 +51,9 @@ app.use(passport.session());
 passport.use('forgejo', new OAuth2Strategy({
     authorizationURL: `${FORGEJO_URL}/login/oauth/authorize`,
     tokenURL: `${FORGEJO_URL}/login/oauth/access_token`,
-    clientID: 'af4e510e-fecc-40e6-a306-dfa12a47cca2',
-    clientSecret: 'gto_yhbxmk5coaxsdgdummk75voqmxsikziwmh7tncqwy4nbeziugmta',
-    callbackURL: 'https://k3p.dev/auth/callback'
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: process.env.CALLBACK_URL
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
@@ -74,7 +75,7 @@ passport.deserializeUser((user, done) => done(null, user));
 app.get('/login', (req, res, next) => {
   // Ensure the returnTo URL is absolute for subdomain redirects
   if (!req.session.returnTo) {
-    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path}`;
+    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path.replace("/login", "/")}`;
   }
   passport.authenticate('forgejo')(req, res, next);
 });
@@ -82,7 +83,7 @@ app.get('/login', (req, res, next) => {
 app.get('/auth/callback', 
   passport.authenticate('forgejo', { failureRedirect: '/login' }),
   (req, res) => {
-    const destination = req.session.returnTo || `https://k3p.dev`;
+    const destination = req.session.returnTo || `/`;
     delete req.session.returnTo;
     res.redirect(destination);
   }
@@ -120,15 +121,24 @@ app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, (req, res) =
 
   // Not authenticated: Store current canonical URL and redirect
   req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path}`;
-  res.redirect('https://k3p.dev/login');
+  res.redirect('/login');
 });
 
-ViteExpress.config({ 
-  base: "/devcontainers/",      // Matches your vite.config.js 'base'
-  inlineViteConfig: {
-    base: "/devcontainers/"    // Ensure Vite logic knows the base during runtime
-  }
-});
+if(process.env.NODE_ENV == "production"){
+  const sBase = "/devcontainers/"
+  ViteExpress.config({
+    base: sBase,      // Matches your vite.config.js 'base'
+    inlineViteConfig: {
+      base: sBase    // Ensure Vite logic knows the base during runtime
+    },
+    hmr: {
+      // Ensure HMR connects through the base
+      path: sBase,
+    },
+
+  });
+
+}
 
 const server = ViteExpress.listen(app, 8000, () => console.log('Proxy running'));
 

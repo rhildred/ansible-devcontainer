@@ -3,16 +3,24 @@ services:
     build: .
     volumes:
       - /tmp:/tmp
+      - /home/ubuntu:/home/ubuntu
       - /var/run/docker.sock:/var/run/docker.sock
     # Optional: ensure your container stays running
     tty: true 
     stdin_open: true
+    user: "${HOST_UID}:${HOST_GID}"
+
     ports:
       - "8000:8000"    # Map host port to proxy port 8000
     networks:
       - proxy-tier
     environment:
       - NODE_ENV=production
+      - FORGEJO_URL="https://f5o.k3p.dev"
+      - DOMAIN=".k3p.dev"
+      - CALLBACK_URL="https://k3p.dev/auth/callback"
+      - CLIENT_ID="af4e510e-fecc-40e6-a306-dfa12a47cca2"
+      - CLIENT_SECRET="gto_yhbxmk5coaxsdgdummk75voqmxsikziwmh7tncqwy4nbeziugmta"
     restart: always
   pgadmin:
     image: dpage/pgadmin4

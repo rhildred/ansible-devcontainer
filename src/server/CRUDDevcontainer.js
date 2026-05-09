@@ -6,13 +6,12 @@ import fs from 'fs';
 import { spawn } from 'node:child_process'; 
 
 
-async function cloneRepo(req, res, { serviceName, repo_url, branch }){
+async function cloneRepo(req, res, { serviceName, repo_url, branch, repoName }){
   const token = req.session.passport.user.token;
 
   
   // 1. Prepare target directory
-  const repoName = repo_url.split('/').pop().replace('.git', '');
-  const targetDir = path.join("/tmp/", serviceName);
+  const targetDir = `/home/ubuntu/${serviceName}/${repoName}`;
   
   try {
     await fs.promises.mkdir(targetDir, { recursive: true });
@@ -37,12 +36,12 @@ async function cloneRepo(req, res, { serviceName, repo_url, branch }){
 
 }
 
-async function createDevcontainerJSON({ serviceName, repo_url }) {
+async function createDevcontainerJSON({ serviceName, repo_url, repoName }) {
     try {
         // 1. Read and parse
         let data = {};
         try {
-            const content = await readFile(`/tmp/${serviceName}/.devcontainer/devcontainer.json`, 'utf8');
+            const content = await readFile(`/tmp/${serviceName}/${repoName}/.devcontainer/devcontainer.json`, 'utf8');
             data = JSON.parse(content) || {};
 
         } catch {
@@ -69,7 +68,6 @@ async function createDevcontainerJSON({ serviceName, repo_url }) {
         data.features[featureKey]["auth"] = "none";
         data.features[featureKey]["port"] = 8080;
         data.features[featureKey]["host"] = "0.0.0.0";
-        const repoName = repo_url.split("/").pop().replace(".git", "");
         data.features[featureKey]["workspace"] = `/workspaces/${repoName}`;
 
         // 4. same pattern for forwardPorts
@@ -90,6 +88,8 @@ async function createDevcontainerJSON({ serviceName, repo_url }) {
         data.remoteUser = data.remoteUser || "codespace",
         data.containerUser =  data.containerUser || "codespace";
         data.containerName = data.containerName || serviceName;
+        data.updateRemoteUserUID = true;
+
 
         // 3. Write back
         // JSON.stringify(object, replacer, space)
@@ -110,8 +110,9 @@ export async function CRUDDevcontainer(req, res){
             dictionaries: [adjectives, animals], // colors can be omitted here as not used
             length: 2
         });
+        const repoName = repo_url.split('/').pop().replace('.git', '');
 
-        const context = { serviceName, repo_url, branch };
+        const context = { serviceName, repo_url, branch, repoName };
         await cloneRepo(req, res, context);
         await createDevcontainerJSON(context);
         // 1. Set headers to stream the CLI logs in real-time
@@ -122,7 +123,7 @@ export async function CRUDDevcontainer(req, res){
         const command = 'devcontainer';
         const args = [
             'up',
-            '--workspace-folder', `/tmp/${serviceName}`,
+            '--workspace-folder', `/home/ubuntu/${serviceName}/${repoName}`,
             '--config', `/tmp/${serviceName}_devcontainer/devcontainer.json`
         ];
 
