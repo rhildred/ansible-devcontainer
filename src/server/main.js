@@ -98,14 +98,25 @@ app.post('/api/devcontainers', async (req, res) => {
 });
 
 // 5. Proxy Logic
-const getTarget = (host) => "http://localhost:8080";
+const getTarget = (host) => {
+  const sHost = host.split(".").shift();
+  const aHost = sHost.split("_");
+  const sPossPort = aHost.pop();
+  if(/^\d+$/.test(sPossPort)){
+    return `http://${aHost.join("_")}:${sPossPort}`
+  }else{
+    return `http://${sHost}:8080`
+  }
+}
 
 app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, (req, res) => {
   // bypass for auth paths
   if (['/login', '/auth/callback'].includes(req.path)) return;
 
   if (req.isAuthenticated()) {
-    return proxy.web(req, res, { target: getTarget(req.headers.host) });
+    const target = getTarget(req.headers.host);
+    console.log(`proxying to ${target}`);
+    return proxy.web(req, res, { target });
   }
 
   // Not authenticated: Store current canonical URL and redirect
