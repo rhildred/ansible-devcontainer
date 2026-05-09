@@ -115,7 +115,6 @@ app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, (req, res) =
 
   if (req.isAuthenticated()) {
     const target = getTarget(req.headers.host);
-    console.log(`proxying to ${target}`);
     return proxy.web(req, res, { target });
   }
 
