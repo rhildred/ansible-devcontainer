@@ -16,18 +16,13 @@ async function cloneRepo(req, res, { serviceName, repo_url, branch, repoName }){
   try {
     await fs.promises.mkdir(targetDir, { recursive: true });
 
-    // 2. Build Authenticated URL
-    // Forgejo/Gitea uses 'oauth2' as the username for Git-over-HTTPS
-    const url = new URL(repo_url);
-    url.username = 'oauth2';
-    url.password = token;
-
     // 3. Simple Checkout
     const git = simpleGit();
-    await git.clone(url.toString(), targetDir, [
+    await git.clone(repo_url, targetDir, [
       '--branch', branch,
       '--single-branch',
-      '--depth', '1' // Shallow clone for speed
+      '--depth', '1', // Shallow clone for speed
+      '-c', `http.extraHeader=Authorization: Bearer ${token}`
     ]);
   } catch (err) {
     console.error('Git Error:', err);
@@ -41,7 +36,7 @@ async function createDevcontainerJSON({ serviceName, repo_url, repoName }) {
         // 1. Read and parse
         let data = {};
         try {
-            const content = await readFile(`/tmp/${serviceName}/${repoName}/.devcontainer/devcontainer.json`, 'utf8');
+            const content = await readFile(`/home/ubuntu/${serviceName}/${repoName}/.devcontainer/devcontainer.json`, 'utf8');
             data = JSON.parse(content) || {};
 
         } catch {
@@ -51,10 +46,10 @@ async function createDevcontainerJSON({ serviceName, repo_url, repoName }) {
         if(!data.build && !data.dockerComposeFile){
             data.image = data.image || "mcr.microsoft.com/devcontainers/universal";
         }else if(data.build && data.build.dockerfile){
-            data.build.dockerfile = `/tmp/${serviceName}/.devcontainer/${data.build.dockerfile}`;
+            data.build.dockerfile = `/home/ubuntu/${serviceName}/${repoName}.devcontainer/${data.build.dockerfile}`;
         }
         else{
-            data.dockerComposeFile = `/tmp/${serviceName}/.devcontainer/${data.dockerComposeFile}`;
+            data.dockerComposeFile = `/home/ubuntu/${serviceName}/${repoName}/.devcontainer/${data.dockerComposeFile}`;
         }
         // 2. Add new elements
         // 1. Ensure 'features' exists
@@ -94,9 +89,9 @@ async function createDevcontainerJSON({ serviceName, repo_url, repoName }) {
         // 3. Write back
         // JSON.stringify(object, replacer, space)
         // make sure folder exists
-        await mkdir(`/tmp/${serviceName}_devcontainer`, { recursive: true });
+        await mkdir(`/home/ubuntu/${serviceName}`, { recursive: true });
 
-        await writeFile(`/tmp/${serviceName}_devcontainer/devcontainer.json`, JSON.stringify(data, null, 2));
+        await writeFile(`/home/ubuntu/${serviceName}/devcontainer.json`, JSON.stringify(data, null, 2));
     } catch (err) {
         console.error('Error:', err.message);
         throw err;
@@ -124,10 +119,11 @@ export async function CRUDDevcontainer(req, res){
         const args = [
             'up',
             '--workspace-folder', `/home/ubuntu/${serviceName}/${repoName}`,
-            '--config', `/tmp/${serviceName}_devcontainer/devcontainer.json`
+            '--config', `/home/ubuntu/${serviceName}/devcontainer.json`
         ];
 
         // 3. Spawn the process
+        console.log(`command: ${command} args: ${JSON.stringify(args)}`)
         const child = spawn(command, args);
 
         // 4. Pipe stdout (standard output) to the response

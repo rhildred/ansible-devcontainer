@@ -74,8 +74,8 @@ passport.deserializeUser((user, done) => done(null, user));
 // 4. Auth Routes
 app.get('/login', (req, res, next) => {
   // Ensure the returnTo URL is absolute for subdomain redirects
-  if (!req.session.returnTo) {
-    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path.replace("/login", "/")}`;
+  if (!req.session.returnTo || req.session.returnTo.includes("/login")) {
+    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path.replace("/login", "/devcontainers")}`;
   }
   passport.authenticate('forgejo')(req, res, next);
 });

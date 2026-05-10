@@ -2,14 +2,16 @@ services:
   node-proxy:
     build: .
     volumes:
-      - /tmp:/tmp
       - /home/ubuntu:/home/ubuntu
       - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/passwd:/etc/passwd
+      - /etc/group:/etc/group
     # Optional: ensure your container stays running
     tty: true 
     stdin_open: true
     user: "${HOST_UID}:${HOST_GID}"
-
+    group_add:
+      - "981"  # This adds the host's 'docker' group GID to your user inside
     ports:
       - "8000:8000"    # Map host port to proxy port 8000
     networks:
