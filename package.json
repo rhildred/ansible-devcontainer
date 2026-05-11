@@ -9,6 +9,7 @@
     "nodemon": "^3.1.14",
     "passport": "^0.7.0",
     "passport-oauth2": "^1.8.0",
+    "pg": "^8.20.0",
     "preact": "^10.29.1",
     "simple-git": "^3.36.0",
     "unique-names-generator": "^4.7.1",

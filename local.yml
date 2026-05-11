@@ -91,6 +91,27 @@
         owner: forgejo
       become_user: postgres
 
+    - name: Grant USAGE on public schema to forgejo
+      community.postgresql.postgresql_privs:
+        db: "forgejodb"
+        type: schema        # When type is schema...
+        objs: public        # ...the schema name goes here
+        roles: forgejo
+        privs: USAGE
+        # schema: public    <-- REMOVE THIS LINE
+      become: true
+      become_user: postgres
+    - name: (Optional) Set default privileges for future tables
+      community.postgresql.postgresql_privs:
+        db: "forgejodb"
+        schema: public
+        objs: TABLES
+        type: default_privs
+        roles: forgejo
+        privs: ALL
+        target_roles: postgres
+      become: true
+      become_user: postgres
     - name: Create the table for devcontainers
       community.postgresql.postgresql_table:
         db: "forgejodb"

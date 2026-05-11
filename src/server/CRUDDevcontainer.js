@@ -4,6 +4,19 @@ import simpleGit from 'simple-git';
 import path from 'path';
 import fs from 'fs';
 import { spawn } from 'node:child_process'; 
+import 'dotenv/config';
+import pkg from 'pg';
+import { hasUncaughtExceptionCaptureCallback } from 'node:process';
+const { Pool } = pkg;
+
+// 1. Configure the connection
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASS,
+  port: 5432,
+});
 
 
 async function cloneRepo(req, res, { serviceName, repo_url, branch, repoName }){
@@ -107,7 +120,7 @@ export async function CRUDDevcontainer(req, res){
         });
         const repoName = repo_url.split('/').pop().replace('.git', '');
 
-        const context = { serviceName, repo_url, branch, repoName };
+        const context = { serviceName, repo_url, branch, repoName, username: req.session.passport.user.username };
         await cloneRepo(req, res, context);
         await createDevcontainerJSON(context);
         // 1. Set headers to stream the CLI logs in real-time
@@ -142,11 +155,68 @@ export async function CRUDDevcontainer(req, res){
         req.on('close', () => {
             child.kill();
         });
-
+        insertData(context);
     }catch(err){
         console.error('Error:', err.message);        
         res.status(500).send(`CrudDevContainer failed: ${err.message}`);
         throw err;
         
     }
+}
+
+async function insertData({ serviceName, username, repo_url, branch, repoName }) {
+  const queryText = 'INSERT INTO devcontainers(id, username, branch, repo_url) VALUES($1, $2, $3, $4)';
+  const values = [serviceName, username, branch, repo_url];
+
+  try {
+    // 2. Execute the query
+    const res = await pool.query(queryText, values);
+
+    // 3. Verify success
+    if (res.rowCount === 1) {
+      console.log('✅ Success! Inserted row ID:', serviceName);
+    } else {
+      console.log('⚠️ Warning: No rows were inserted.');
+      throw "no rows inserted";
+    }
+
+  } catch (err) {
+    // 4. Handle errors (e.g., unique constraint violations)
+    console.error('❌ Database error:', err.message);
+  }
+}
+
+export async function updateData({ serviceName, username }) {
+  const queryText = 'UPDATE devcontainers SET accessed_at = now() WHERE id = $1 AND username = $2';
+  const values = [serviceName, username];
+
+  try {
+    // 2. Execute the query
+    const res = await pool.query(queryText, values);
+
+    // 3. Verify success
+    if (res.rowCount === 1) {
+      console.log('✅ Success! updated row ID:', serviceName);
+    } else {
+      console.log(`⚠️ Warning: No rows were updated. serviceName: ${serviceName} username ${username}`);
+      throw new Error("no rows updated");
+    }
+
+  } catch (err) {
+    // 4. Handle errors (e.g., unique constraint violations)
+    console.error('❌ Database error:', err.message);
+  }
+}
+
+
+// 5. Proxy Logic
+export const getTarget = (host) => {
+  const sHost = host.split(".").shift();
+  const aHost = sHost.split("_");
+  const sPossPort = aHost.pop();
+  if(/^\d+$/.test(sPossPort)){
+    return `http://${aHost.join("_")}:${sPossPort}`
+  }else{
+    return `http://${sHost}:8080`
+  }
 }
