@@ -164,6 +164,34 @@ export async function CRUDDevcontainer(req, res){
     }
 }
 
+export async function listDevcontainers(req, res){
+  try {
+    const { rows } = await pool.query('SELECT * FROM devcontainers');
+
+    const supplementedRows = await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const sPath = `/home/ubuntu/${row.id}/${row.repo_url.split("/").pop().replace(".git", "")}`;
+          // simple-git expects the directory path to the repo
+          const status = await simpleGit(sPath).status();
+
+          return {
+            ...row, // Spreads all DB columns (id, name, path, etc.)
+            isClean: status.isClean(),
+            ahead: status.ahead,
+          };
+        } catch (error) {
+          return { ...row, gitError: true };
+        }
+      })
+    );
+
+    res.json(supplementedRows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }  
+}
+
 async function insertData({ serviceName, username, repo_url, branch, repoName }) {
   const queryText = 'INSERT INTO devcontainers(id, username, branch, repo_url) VALUES($1, $2, $3, $4)';
   const values = [serviceName, username, branch, repo_url];
@@ -208,15 +236,3 @@ export async function updateData({ serviceName, username }) {
   }
 }
 
-
-// 5. Proxy Logic
-export const getTarget = (host) => {
-  const sHost = host.split(".").shift();
-  const aHost = sHost.split("_");
-  const sPossPort = aHost.pop();
-  if(/^\d+$/.test(sPossPort)){
-    return `http://${aHost.join("_")}:${sPossPort}`
-  }else{
-    return `http://${sHost}:8080`
-  }
-}

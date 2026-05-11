@@ -4,7 +4,7 @@ import passport from 'passport';
 import { Strategy as OAuth2Strategy } from 'passport-oauth2';
 import httpProxy from 'http-proxy';
 import axios from 'axios';
-import { CRUDDevcontainer, getTarget, updateData } from "./CRUDDevcontainer.js";
+import { CRUDDevcontainer, updateData, listDevcontainers } from "./CRUDDevcontainer.js";
 import ViteExpress from "vite-express";
 import 'dotenv/config';
 
@@ -98,6 +98,24 @@ app.post('/api/devcontainers', async (req, res) => {
   await CRUDDevcontainer(req, res);
 });
 
+app.get('/api/devcontainers', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+  await listDevcontainers(req, res);
+});
+
+
+// 5. Proxy Logic
+const getTarget = (host) => {
+  const sHost = host.split(".").shift();
+  const aHost = sHost.split("_");
+  const sPossPort = aHost.pop();
+  if(/^\d+$/.test(sPossPort)){
+    return `http://${aHost.join("_")}:${sPossPort}`
+  }else{
+    return `http://${sHost}:8080`
+  }
+}
+
 app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, async (req, res) => {
   // bypass for auth paths
   if (['/login', '/auth/callback'].includes(req.path)) return;
@@ -105,7 +123,9 @@ app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, async (req, 
   if (req.isAuthenticated()) {
     const target = getTarget(req.headers.host);
     const oUrl = new URL(target);
-    await updateData({serviceName: oUrl.hostname,username: req.session.passport.user.username})
+    if(req.path == "/"){
+      await updateData({serviceName: oUrl.hostname,username: req.session.passport.user.username});
+    }
     return proxy.web(req, res, { target });
   }
 
