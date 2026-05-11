@@ -4,7 +4,7 @@ import passport from 'passport';
 import { Strategy as OAuth2Strategy } from 'passport-oauth2';
 import httpProxy from 'http-proxy';
 import axios from 'axios';
-import { CRUDDevcontainer, updateData, listDevcontainers } from "./CRUDDevcontainer.js";
+import { CRUDDevcontainer, updateData, listDevcontainers, deleteDevcontainer } from "./CRUDDevcontainer.js";
 import ViteExpress from "vite-express";
 import 'dotenv/config';
 
@@ -95,7 +95,12 @@ app.get("/hello", (req, res) => {
 
 app.post('/api/devcontainers', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
-  await CRUDDevcontainer(req, res);
+  CRUDDevcontainer(req, res);
+});
+
+app.delete('/api/devcontainers/:id', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+  deleteDevcontainer(req, res);
 });
 
 app.get('/api/devcontainers', async (req, res) => {

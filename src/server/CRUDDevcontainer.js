@@ -192,6 +192,28 @@ export async function listDevcontainers(req, res){
   }  
 }
 
+export async function deleteDevcontainer(req, res){
+  const { id } = req.params; // Grabs the ID from the URL
+  try {
+    const result = await pool.query(
+      'DELETE FROM devcontainers WHERE id = $1 AND username = $2', 
+      [id, req.session.passport.user.username]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Container not found" });
+    }
+    // docker rm container
+    // delete the folder
+    // Return the deleted item 
+    res.json({ message: "Deleted successfully", deleted: id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete record" });
+  }
+});
+
+
 async function insertData({ serviceName, username, repo_url, branch, repoName }) {
   const queryText = 'INSERT INTO devcontainers(id, username, branch, repo_url) VALUES($1, $2, $3, $4)';
   const values = [serviceName, username, branch, repo_url];
