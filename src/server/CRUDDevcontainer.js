@@ -3,8 +3,9 @@ import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generato
 import simpleGit from 'simple-git';
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'node:child_process'; 
 import 'dotenv/config';
+import { spawn, spawnSync } from 'node:child_process';
+import { rm } from 'node:fs/promises';
 import pkg from 'pg';
 import { hasUncaughtExceptionCaptureCallback } from 'node:process';
 const { Pool } = pkg;
@@ -123,38 +124,7 @@ export async function CRUDDevcontainer(req, res){
         const context = { serviceName, repo_url, branch, repoName, username: req.session.passport.user.username };
         await cloneRepo(req, res, context);
         await createDevcontainerJSON(context);
-        // 1. Set headers to stream the CLI logs in real-time
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Transfer-Encoding', 'chunked');
-
-        // 2. Define your specific CLI command and arguments
-        const command = 'devcontainer';
-        const args = [
-            'up',
-            '--workspace-folder', `/home/ubuntu/${serviceName}/${repoName}`,
-            '--config', `/home/ubuntu/${serviceName}/devcontainer.json`
-        ];
-
-        // 3. Spawn the process
-        console.log(`command: ${command} args: ${JSON.stringify(args)}`)
-        const child = spawn(command, args);
-
-        // 4. Pipe stdout (standard output) to the response
-        child.stdout.pipe(res);
-
-        // 5. Pipe stderr (errors/warnings) to the response so you can debug failures
-        child.stderr.pipe(res);
-
-        // 6. Handle process completion
-        child.on('close', (code) => {
-            res.write(`\nProcess exited with code: ${code}\n`);
-            res.end();
-        });
-
-        // 7. Security: Kill the process if the user cancels the request
-        req.on('close', () => {
-            child.kill();
-        });
+        await startDevcontainer(req, res, context)
         insertData(context);
     }catch(err){
         console.error('Error:', err.message);        
@@ -166,7 +136,8 @@ export async function CRUDDevcontainer(req, res){
 
 export async function listDevcontainers(req, res){
   try {
-    const { rows } = await pool.query('SELECT * FROM devcontainers');
+    const { rows } = await pool.query('SELECT * FROM devcontainers WHERE username = $1',
+       [req.session.passport.user.username]);
 
     const supplementedRows = await Promise.all(
       rows.map(async (row) => {
@@ -201,17 +172,83 @@ export async function deleteDevcontainer(req, res){
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Container not found" });
+      throw new Error("devocntainer not in database");
     }
     // docker rm container
+    await dockerRM(id);
     // delete the folder
+    await rm(`/home/ubuntu/${id}`, { 
+      recursive: true, // Deletes the folder and everything inside it
+      force: true      // Prevents errors if the folder doesn't exist
+    });
+
     // Return the deleted item 
     res.json({ message: "Deleted successfully", deleted: id });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to delete record" });
+    res.status(500).json({ error: "Failed to delete record", err });
   }
-});
+}
+
+export function updateDevContainer(req, res){
+  const { id } = req.params; // Grabs the ID from the URL
+  const username = req.session.passport.user.username;
+  const { rows } = await pool.query('SELECT * FROM devcontainers WHERE id = $1 AND username = $2',
+      [id, username]);
+  try{
+    const row = rows[0];
+    const context = { serviceName: row.id, repo_url: row.repo_url, branch: row.branch, repoName: row.repo_url.split('/').pop().replace('.git', ''), username};
+    await dockerRM(id);
+    await createDevcontainerJSON(context);
+    await startDevcontainer(req, res, context);
+  }catch(err){
+    console.error(err);
+    res.status(500).json({ error: "Failed to update record" });
+  }
+}
+
+function dockerRM(name){
+  const { status, stdout, stderr } = spawnSync('docker', ['rm', '-f', name], { encoding: 'utf8' });
+  if(status != 0){
+    throw new Error(stdout);
+  }
+}
+
+function startDevcontainer(req, res, {serviceName, repoName}){
+    // 1. Set headers to stream the CLI logs in real-time
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+
+  // 2. Define your specific CLI command and arguments
+  const command = 'devcontainer';
+  const args = [
+      'up',
+      '--workspace-folder', `/home/ubuntu/${serviceName}/${repoName}`,
+      '--config', `/home/ubuntu/${serviceName}/devcontainer.json`
+  ];
+
+  // 3. Spawn the process
+  console.log(`command: ${command} args: ${JSON.stringify(args)}`)
+  const child = spawn(command, args);
+
+  // 4. Pipe stdout (standard output) to the response
+  child.stdout.pipe(res);
+
+  // 5. Pipe stderr (errors/warnings) to the response so you can debug failures
+  child.stderr.pipe(res);
+
+  // 6. Handle process completion
+  child.on('close', (code) => {
+      res.write(`\nProcess exited with code: ${code}\n`);
+      res.end();
+  });
+
+  // 7. Security: Kill the process if the user cancels the request
+  req.on('close', () => {
+      child.kill();
+  });
+
+}
 
 
 async function insertData({ serviceName, username, repo_url, branch, repoName }) {
