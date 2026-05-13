@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, access } from 'fs/promises';
 import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generator';
 import simpleGit from 'simple-git';
 import path from 'path';
@@ -48,13 +48,15 @@ async function cloneRepo(req, res, { serviceName, repo_url, branch, repoName }){
 async function createDevcontainerJSON({ serviceName, repo_url, repoName }) {
     try {
         // 1. Read and parse
-        let data = {};
-        try {
-            const content = await readFile(`/home/ubuntu/${serviceName}/${repoName}/.devcontainer/devcontainer.json`, 'utf8');
-            data = JSON.parse(content) || {};
-
-        } catch {
-            0;
+        let data = null;
+        let content;
+        try{
+            content = await readFile(`/home/ubuntu/${serviceName}/${repoName}/.devcontainer/devcontainer.json`, 'utf8');
+        }catch{
+          data = {};
+        }
+        if(data == null){
+          data = JSON.parse(content);
         }
         data.name = serviceName;
         if(!data.build && !data.dockerComposeFile){
@@ -124,7 +126,8 @@ export async function CRUDDevcontainer(req, res){
         const context = { serviceName, repo_url, branch, repoName, username: req.session.passport.user.username };
         await cloneRepo(req, res, context);
         await createDevcontainerJSON(context);
-        await startDevcontainer(req, res, context)
+        await startDevcontainer(req, res, context);
+        res.end();
         insertData(context);
     }catch(err){
         console.error('Error:', err.message);        
@@ -136,7 +139,7 @@ export async function CRUDDevcontainer(req, res){
 
 export async function listDevcontainers(req, res){
   try {
-    const { rows } = await pool.query('SELECT * FROM devcontainers WHERE username = $1',
+    const { rows } = await pool.query('SELECT * FROM devcontainers WHERE username = $1 ORDER BY accessed_at DESC',
        [req.session.passport.user.username]);
 
     const supplementedRows = await Promise.all(
@@ -190,7 +193,7 @@ export async function deleteDevcontainer(req, res){
   }
 }
 
-export function updateDevContainer(req, res){
+export async function updateDevContainer(req, res){
   const { id } = req.params; // Grabs the ID from the URL
   const username = req.session.passport.user.username;
   const { rows } = await pool.query('SELECT * FROM devcontainers WHERE id = $1 AND username = $2',
@@ -198,9 +201,10 @@ export function updateDevContainer(req, res){
   try{
     const row = rows[0];
     const context = { serviceName: row.id, repo_url: row.repo_url, branch: row.branch, repoName: row.repo_url.split('/').pop().replace('.git', ''), username};
-    await dockerRM(id);
     await createDevcontainerJSON(context);
+    await buildDevcontainer(req, res, context);
     await startDevcontainer(req, res, context);
+    res.end();
   }catch(err){
     console.error(err);
     res.status(500).json({ error: "Failed to update record" });
@@ -210,16 +214,13 @@ export function updateDevContainer(req, res){
 function dockerRM(name){
   const { status, stdout, stderr } = spawnSync('docker', ['rm', '-f', name], { encoding: 'utf8' });
   if(status != 0){
-    throw new Error(stdout);
+    console.log(`docker rm failed stdout: ${stdout}, stderr: ${stderr}`);
+    throw new Error(stdout || "" + stderr || "");
   }
+  return `docker rm -f ${name}`;
 }
 
-function startDevcontainer(req, res, {serviceName, repoName}){
-    // 1. Set headers to stream the CLI logs in real-time
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Transfer-Encoding', 'chunked');
-
-  // 2. Define your specific CLI command and arguments
+async function startDevcontainer(req, res, {serviceName, repoName}){
   const command = 'devcontainer';
   const args = [
       'up',
@@ -227,29 +228,87 @@ function startDevcontainer(req, res, {serviceName, repoName}){
       '--config', `/home/ubuntu/${serviceName}/devcontainer.json`
   ];
 
-  // 3. Spawn the process
-  console.log(`command: ${command} args: ${JSON.stringify(args)}`)
-  const child = spawn(command, args);
-
-  // 4. Pipe stdout (standard output) to the response
-  child.stdout.pipe(res);
-
-  // 5. Pipe stderr (errors/warnings) to the response so you can debug failures
-  child.stderr.pipe(res);
-
-  // 6. Handle process completion
-  child.on('close', (code) => {
-      res.write(`\nProcess exited with code: ${code}\n`);
-      res.end();
-  });
-
-  // 7. Security: Kill the process if the user cancels the request
-  req.on('close', () => {
-      child.kill();
-  });
-
+  await pipeAsync(req, res, {command, args});
 }
 
+async function buildDevcontainer(res, req, {serviceName, repoName}){
+  const command = 'devcontainer';
+  const args = [
+      'build',
+      '--workspace-folder', `/home/ubuntu/${serviceName}/${repoName}`,
+      '--config', `/home/ubuntu/${serviceName}/devcontainer.json`
+  ];
+  await pipeAsync(res, req, {command, args});
+  return `dev container built result: ${result}`;
+}
+
+function pipeAsync(req, res, {command, args}){
+  return new Promise((resolve, reject) => {
+    // 1. Set headers to stream the CLI logs in real-time
+    if(!res.headersSent){
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+
+    }
+
+    // 3. Spawn the process
+    console.log(`command: ${command} args: ${JSON.stringify(args)}`)
+    const child = spawn(command, args);
+
+    // 4. Pipe stdout (standard output) to the response
+    child.stdout.pipe(res);
+
+    // 5. Pipe stderr (errors/warnings) to the response so you can debug failures
+    child.stderr.pipe(res);
+
+    // 6. Handle process completion
+    child.on('close', (code) => {
+      res.write(`\nProcess exited with code: ${code}\n`);
+      if(code == 0){
+        resolve();
+      }else{
+        reject(`rejected code: ${code}`);
+      }
+    });
+
+    // 7. Security: Kill the process if the user cancels the request
+    req.on('close', () => {
+        child.kill();
+    });
+    
+  });
+}
+
+function spawnAsync(command, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, options);
+    let output = '';
+
+    child.stdout?.on('data', (data) => { output += data; });
+    child.stderr?.on('data', (data) => { output += data; });
+
+    // Use a helper to resolve once, either on 'exit' or 'close'
+    let resolved = false;
+    const finish = (code) => {
+      if (resolved) return;
+      resolved = true;
+      if (code === 0) resolve(output);
+      else reject(new Error(`Exited with code ${code}`));
+    };
+
+    child.on('error', (err) => {
+      resolved = true;
+      reject(err);
+    });
+
+    // Fallback: 'exit' often fires before 'close'
+    child.on('exit', finish);
+    child.on('close', finish);
+
+    // CRITICAL: Close stdin if you aren't using it to prevent hangs
+    if (child.stdin) child.stdin.end();
+  });
+}
 
 async function insertData({ serviceName, username, repo_url, branch, repoName }) {
   const queryText = 'INSERT INTO devcontainers(id, username, branch, repo_url) VALUES($1, $2, $3, $4)';
