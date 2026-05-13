@@ -20,13 +20,11 @@ git config local http.extraHeader "Authorization: token your_forgejo_token_here"
 
 ## TODO
 
-1. integrate with a custom element in foregjo
-2. develop custom element for launching, updating, deleting and listing dev containers for a user, repo and branch
-3. add the docker compose up -d to the playbook
-4. add CUDA drivers
-5. remove postgres
-6. integrate hyperdx
-7. see if there is a xx.io domain name that I can use
+1. add the docker compose up -d to the playbook
+1. remove postgres
+1. integrate hyperdx
+1. develop custom element for launching, updating, deleting and listing dev containers for a user, repo and branch. Integrate in forgejo
+1. add CUDA drivers
 8. install on gpu server
 9. meet with Steve and Ernie for a demo
 

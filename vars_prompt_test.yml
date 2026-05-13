@@ -1,0 +1,13 @@
+- name: Example Playbook
+  hosts: localhost
+  vars_prompt:
+    - name: username
+      prompt: "What is your username?"
+      private: false  # Shows input as you type
+    - name: password
+      prompt: "Enter your password"
+      private: true   # Hides input (default)
+  tasks:
+    - name: Print the username
+      ansible.builtin.debug:
+        msg: "Hello {{ username }}"
