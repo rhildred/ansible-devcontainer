@@ -294,16 +294,12 @@ function spawnAsync(command, args = [], options = {}) {
     child.stderr?.on('data', (data) => { output += data; });
 
     // Use a helper to resolve once, either on 'exit' or 'close'
-    let resolved = false;
     const finish = (code) => {
-      if (resolved) return;
-      resolved = true;
       if (code === 0) resolve(output);
       else reject(new Error(`Exited with code ${code}`));
     };
 
     child.on('error', (err) => {
-      resolved = true;
       reject(err);
     });
 

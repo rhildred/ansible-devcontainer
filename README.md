@@ -20,10 +20,9 @@ git config local http.extraHeader "Authorization: token your_forgejo_token_here"
 
 ## TODO
 
-1. remove postgres
-1. make hyperdx and borgbackup appliance
 1. develop custom element for launching, updating, deleting and listing dev containers for a user, repo and branch. Integrate in forgejo
 1. add CUDA drivers
 8. install on gpu server
+1. make hyperdx and borgbackup appliance
 9. meet with Steve and Ernie for a demo
 
