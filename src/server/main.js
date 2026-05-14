@@ -72,15 +72,15 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 // 4. Auth Routes
-app.get('/login', (req, res, next) => {
+app.get('/devcontainers/api/login', (req, res, next) => {
   // Ensure the returnTo URL is absolute for subdomain redirects
   if (!req.session.returnTo || req.session.returnTo.includes("/login")) {
-    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path.replace("/login", "/devcontainers")}`;
+    req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path.replace("/devcontainers/api/login", "/devcontainers")}`;
   }
   passport.authenticate('forgejo')(req, res, next);
 });
 
-app.get('/auth/callback', 
+app.get('/devcontainers/api/auth/callback', 
   passport.authenticate('forgejo', { failureRedirect: '/login' }),
   (req, res) => {
     const destination = req.session.returnTo || `/`;
@@ -93,22 +93,22 @@ app.get("/hello", (req, res) => {
   res.send("Hello Vite + React!");
 });
 
-app.post('/api/devcontainers', async (req, res) => {
+app.post('/devcontainers/api', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
   CRUDDevcontainer(req, res);
 });
 
-app.delete('/api/devcontainers/:id', async (req, res) => {
+app.delete('/devcontainers/api/:id', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
   deleteDevcontainer(req, res);
 });
 
-app.post('/api/devcontainers/:id', async (req, res) => {
+app.post('/devcontainers/api/:id', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
   updateDevContainer(req, res);
 });
 
-app.get('/api/devcontainers', async (req, res) => {
+app.get('/devcontainers/api', async (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
   await listDevcontainers(req, res);
 });
@@ -126,10 +126,7 @@ const getTarget = (host) => {
   }
 }
 
-app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, async (req, res) => {
-  // bypass for auth paths
-  if (['/login', '/auth/callback'].includes(req.path)) return;
-
+app.all(/^(?!\/devcontainers).*$/, async (req, res) => {
   if (req.isAuthenticated()) {
     const target = getTarget(req.headers.host);
     const oUrl = new URL(target);
@@ -141,7 +138,7 @@ app.all(/^(?!\/login|\/auth\/callback|\/hello|\/devcontainers).*$/, async (req, 
 
   // Not authenticated: Store current canonical URL and redirect
   req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path}`;
-  res.redirect('/login');
+  res.redirect('/devcontainers/api/login');
 });
 
 if(process.env.NODE_ENV == "production"){
