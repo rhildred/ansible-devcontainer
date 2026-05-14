@@ -2,6 +2,13 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy package files and install ALL dependencies
 COPY package*.json ./
 RUN npm install
@@ -9,6 +16,7 @@ RUN npm install
 # Copy source code and build the Vite frontend
 COPY . .
 RUN npm run build
+RUN npm prune --production
 
 # --- Stage 2: Production ---
 FROM node:20-slim AS runner
@@ -42,10 +50,10 @@ RUN apt-get update && \
 RUN npm install -g @devcontainers/cli
 
 COPY package*.json ./
-RUN npm ci --only=production
 
 # Copy the built frontend from the builder stage
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy your Express server code
 COPY src/server ./src/server

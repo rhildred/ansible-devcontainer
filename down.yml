@@ -4,7 +4,6 @@
   become: true
   vars:
   tasks:
-    # 1. Clear previous interrupted dpkg states
     - name: Fix interrupted package installations
       command: dpkg --configure -a
       changed_when: false
@@ -42,7 +41,6 @@
         state: absent
 
 
-    # 2. Setup Prerequisites and Repositories
     - name: remove prerequisite packages
       apt:
         name: [ca-certificates, gnupg]
@@ -50,7 +48,6 @@
         update_cache: yes
 
 
-    # 1. Install PostgreSQL and Python bindings (required for Ansible modules)
     - name: remove PostgreSQL and psycopg2
       ansible.builtin.apt:
         name: 

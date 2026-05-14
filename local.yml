@@ -3,10 +3,10 @@
   hosts: localhost
   become: true
   vars:
-    # Database credentials (change these!)
-    db_forgejo_pass: "Cid1wchn" 
-    pg_hba_path: "/etc/postgresql/16/main/pg_hba.conf"
- 
+    # DYNAMICALLY RESOLVE RUNTIME IDS FROM RUNNING USER
+    runtime_uid: "{{ lookup('pipe', 'id -u') }}"
+    runtime_gid: "{{ lookup('pipe', 'id -g') }}"
+
   tasks:
     # 1. Clear previous interrupted dpkg states
     - name: Fix interrupted package installations
@@ -60,101 +60,16 @@
         groups: docker
         append: yes
       notify: refresh_ssh
-
-      # 1. Install PostgreSQL and Python bindings (required for Ansible modules)
-    - name: Install PostgreSQL and psycopg2
-      ansible.builtin.apt:
-        name: 
-          - postgresql
-          - postgresql-contrib
-          - python3-psycopg2
+    - name: Pull and bring up the Docker Compose stack
+      community.docker.docker_compose_v2:
+        project_src: .
         state: present
-        update_cache: yes
+        pull: always
+      register: compose_output
 
-    - name: Ensure PostgreSQL is running
-      ansible.builtin.systemd:
-        name: postgresql
-        state: started
-        enabled: yes
-
-    # 2. Create Databases and Users
-
-    - name: Create database user for Forgejo
-      community.postgresql.postgresql_user:
-        name: forgejo
-        password: "{{ db_forgejo_pass }}"
-      become_user: postgres
-
-    - name: Create Forgejo database
-      community.postgresql.postgresql_db:
-        name: forgejodb
-        owner: forgejo
-      become_user: postgres
-
-    - name: Grant USAGE on public schema to forgejo
-      community.postgresql.postgresql_privs:
-        db: "forgejodb"
-        type: schema        # When type is schema...
-        objs: public        # ...the schema name goes here
-        roles: forgejo
-        privs: USAGE
-        # schema: public    <-- REMOVE THIS LINE
-      become: true
-      become_user: postgres
-    - name: (Optional) Set default privileges for future tables
-      community.postgresql.postgresql_privs:
-        db: "forgejodb"
-        schema: public
-        objs: TABLES
-        type: default_privs
-        roles: forgejo
-        privs: ALL
-        target_roles: postgres
-      become: true
-      become_user: postgres
-    - name: Create the table for devcontainers
-      community.postgresql.postgresql_table:
-        db: "forgejodb"
-        name: "devcontainers"
-        columns:
-          - id TEXT primary key
-          - username text not null
-          - branch text not null
-          - repo_url TEXT not null
-          - accessed_at timestamp default now()
-          - created_at timestamp default now()
-        state: present
-      become: true
-      become_user: postgres
-
-    - name: Create a standard index on username
-      community.postgresql.postgresql_idx:
-        db: forgejodb
-        table: devcontainers
-        columns: username
-        name: idx_username
-        state: present
-      become: yes
-      become_user: postgres      
-
-    - name: Configure Postgres to listen on all IPv4 addresses
-      community.postgresql.postgresql_set:
-        name: listen_addresses
-        value: "*"
-      become_user: postgres
-      notify: Restart PostgreSQL
-
-    - name: Allow all IPv4 addresses in pg_hba.conf
-      community.postgresql.postgresql_pg_hba:
-        dest: "{{ pg_hba_path }}"
-        contype: host
-        databases: all
-        users: all
-        source: "0.0.0.0/0"
-        method: scram-sha-256
-      become_user: postgres
-      notify: Restart PostgreSQL
-
+    - name: Debug compose service deployment output
+      ansible.builtin.debug:
+        var: compose_output
 
     - name: Install Forgejo via EasyForgejo script
       shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash | tail -23 > FORGEJO.md
@@ -174,7 +89,3 @@
   handlers:
     - name: refresh_ssh
       ansible.builtin.meta: reset_connection
-    - name: Restart PostgreSQL
-      ansible.builtin.service:
-        name: postgresql
-        state: restarted

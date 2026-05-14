@@ -6,19 +6,31 @@ import fs from 'fs';
 import 'dotenv/config';
 import { spawn, spawnSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
-import pkg from 'pg';
 import { hasUncaughtExceptionCaptureCallback } from 'node:process';
-const { Pool } = pkg;
+import Database from 'better-sqlite3';
 
 // 1. Configure the connection
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASS,
-  port: 5432,
-});
+const db = new Database("/home/ubuntu/devcontainers.sqlite3");
+db.prepare(`
+          CREATE TABLE IF NOT EXISTS devcontainers (
+            id TEXT primary key,
+            username TEXT NOT NULL,
+            branch TEXT not null,
+            repo_url TEXT not null,
+            accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )  
+  `).run();
 
+db.prepare(`
+          CREATE INDEX IF NOT EXISTS idx_user_name 
+          ON devcontainers (username)
+  `).run();
+const DB_SELECT = db.prepare("SELECT * FROM devcontainers WHERE username = ? ORDER BY accessed_at DESC");
+const DB_SELECT_ONE = db.prepare("SELECT * FROM devcontainers WHERE id = ? AND username = ?")
+const DB_INSERT = db.prepare("INSERT INTO devcontainers(id, username, branch, repo_url) VALUES(?, ?, ?, ?)")
+const DB_DELETE = db.prepare("DELETE FROM devcontainers WHERE id = ? AND username = ?")
+const DB_UPDATE = db.prepare("UPDATE devcontainers SET accessed_at = CURRENT_TIMESTAMP WHERE id = ? AND username = ?")
 
 async function cloneRepo(req, res, { serviceName, repo_url, branch, repoName }){
   const token = req.session.passport.user.token;
@@ -139,8 +151,7 @@ export async function CRUDDevcontainer(req, res){
 
 export async function listDevcontainers(req, res){
   try {
-    const { rows } = await pool.query('SELECT * FROM devcontainers WHERE username = $1 ORDER BY accessed_at DESC',
-       [req.session.passport.user.username]);
+    const rows  = DB_SELECT.all(req.session.passport.user.username);
 
     const supplementedRows = await Promise.all(
       rows.map(async (row) => {
@@ -169,12 +180,9 @@ export async function listDevcontainers(req, res){
 export async function deleteDevcontainer(req, res){
   const { id } = req.params; // Grabs the ID from the URL
   try {
-    const result = await pool.query(
-      'DELETE FROM devcontainers WHERE id = $1 AND username = $2', 
-      [id, req.session.passport.user.username]
-    );
+    const result = DB_DELETE.run(id, req.session.passport.user.username)
 
-    if (result.rowCount === 0) {
+    if (result.changes === 0) {
       throw new Error("devocntainer not in database");
     }
     // docker rm container
@@ -196,10 +204,8 @@ export async function deleteDevcontainer(req, res){
 export async function updateDevContainer(req, res){
   const { id } = req.params; // Grabs the ID from the URL
   const username = req.session.passport.user.username;
-  const { rows } = await pool.query('SELECT * FROM devcontainers WHERE id = $1 AND username = $2',
-      [id, username]);
   try{
-    const row = rows[0];
+    const row = DB_SELECT_ONE.get(id, username);
     const context = { serviceName: row.id, repo_url: row.repo_url, branch: row.branch, repoName: row.repo_url.split('/').pop().replace('.git', ''), username};
     await createDevcontainerJSON(context);
     await buildDevcontainer(req, res, context);
@@ -311,15 +317,13 @@ function spawnAsync(command, args = [], options = {}) {
 }
 
 async function insertData({ serviceName, username, repo_url, branch, repoName }) {
-  const queryText = 'INSERT INTO devcontainers(id, username, branch, repo_url) VALUES($1, $2, $3, $4)';
-  const values = [serviceName, username, branch, repo_url];
 
   try {
     // 2. Execute the query
-    const res = await pool.query(queryText, values);
+    const res = DB_INSERT.run(serviceName, username, branch, repo_url);
 
     // 3. Verify success
-    if (res.rowCount === 1) {
+    if (res.changes === 1) {
       console.log('✅ Success! Inserted row ID:', serviceName);
     } else {
       console.log('⚠️ Warning: No rows were inserted.');
@@ -333,15 +337,13 @@ async function insertData({ serviceName, username, repo_url, branch, repoName })
 }
 
 export async function updateData({ serviceName, username }) {
-  const queryText = 'UPDATE devcontainers SET accessed_at = now() WHERE id = $1 AND username = $2';
-  const values = [serviceName, username];
 
   try {
     // 2. Execute the query
-    const res = await pool.query(queryText, values);
+    const res = DB_UPDATE.run(serviceName, username);
 
     // 3. Verify success
-    if (res.rowCount === 1) {
+    if (res.changes === 1) {
       console.log('✅ Success! updated row ID:', serviceName);
     } else {
       console.log(`⚠️ Warning: No rows were updated. serviceName: ${serviceName} username ${username}`);
