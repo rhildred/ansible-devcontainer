@@ -73,12 +73,8 @@ app.get('/devcontainers/api/auth/callback',
   }
 );
 
-// A single route that works on both https://k3p.dev/hello and https://api.k3p.dev/hello
-app.get('/devcontainers/api/hello', async (req, res) => {
-    // 2. If data already exists, read it and show which domain we are on
-    const currentHost = req.headers.host;
-    if (!req.session.passport) return res.send("uninitialized");
-    const response = await axios.post('https://k3p.dev/login/oauth/access_token', {
+async function refreshToken(req){
+    const response = await axios.post(`${FORGEJO_URL}/login/oauth/access_token`, {
         client_id: process.env.CLIENT_ID,
         client_secret: process.env.CLIENT_SECRET,
         grant_type: 'refresh_token',
@@ -95,7 +91,15 @@ app.get('/devcontainers/api/hello', async (req, res) => {
             req.session.save((err) => (err ? reject(err) : resolve()));
         });
     }
+    return(access_token);
+}
 
+// A single route that works on both https://k3p.dev/hello and https://api.k3p.dev/hello
+app.get('/devcontainers/api/hello', async (req, res) => {
+    // 2. If data already exists, read it and show which domain we are on
+    const currentHost = req.headers.host;
+    if (!req.session.passport) return res.send("uninitialized");
+    const access_token = await refreshToken(req);
     res.send(`
     <h1>Session Read Successfully!</h1>
     <p>Current URL Host: <b>${currentHost}</b></p>
