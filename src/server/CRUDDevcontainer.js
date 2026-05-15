@@ -35,7 +35,7 @@ const DB_DELETE = db.prepare("DELETE FROM devcontainers WHERE id = ? AND usernam
 const DB_UPDATE = db.prepare("UPDATE devcontainers SET accessed_at = CURRENT_TIMESTAMP WHERE id = ? AND username = ?")
 
 async function cloneRepo(req, res, { serviceName, repo_url, branch, repoName }){
-  const token = req.session.passport.user.token;
+  const token = refreshToken(req);
 
   
   // 1. Prepare target directory
