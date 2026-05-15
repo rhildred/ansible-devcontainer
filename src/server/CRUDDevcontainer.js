@@ -245,7 +245,6 @@ async function buildDevcontainer(res, req, {serviceName, repoName}){
       '--config', `/home/ubuntu/${serviceName}/devcontainer.json`
   ];
   await pipeAsync(res, req, {command, args});
-  return `dev container built result: ${result}`;
 }
 
 function pipeAsync(req, res, {command, args}){
@@ -282,33 +281,6 @@ function pipeAsync(req, res, {command, args}){
         child.kill();
     });
     
-  });
-}
-
-function spawnAsync(command, args = [], options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, options);
-    let output = '';
-
-    child.stdout?.on('data', (data) => { output += data; });
-    child.stderr?.on('data', (data) => { output += data; });
-
-    // Use a helper to resolve once, either on 'exit' or 'close'
-    const finish = (code) => {
-      if (code === 0) resolve(output);
-      else reject(new Error(`Exited with code ${code}`));
-    };
-
-    child.on('error', (err) => {
-      reject(err);
-    });
-
-    // Fallback: 'exit' often fires before 'close'
-    child.on('exit', finish);
-    child.on('close', finish);
-
-    // CRITICAL: Close stdin if you aren't using it to prevent hangs
-    if (child.stdin) child.stdin.end();
   });
 }
 
