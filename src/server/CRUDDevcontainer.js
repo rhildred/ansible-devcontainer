@@ -3,11 +3,13 @@ import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generato
 import simpleGit from 'simple-git';
 import path from 'path';
 import fs from 'fs';
+import axios from 'axios';
 import 'dotenv/config';
 import { spawn, spawnSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { hasUncaughtExceptionCaptureCallback } from 'node:process';
 import Database from 'better-sqlite3';
+import { FORGEJO_URL } from './main.js';
 
 // 1. Configure the connection
 const db = new Database("/home/ubuntu/devcontainers.sqlite3");
@@ -323,4 +325,27 @@ export async function updateData({ serviceName, username }) {
     console.error('❌ Database error:', err.message);
   }
 }
+
+export async function refreshToken(req){
+    const response = await axios.post(`${FORGEJO_URL}/login/oauth/access_token`, {
+        client_id: process.env.CLIENT_ID,
+        client_secret: process.env.CLIENT_SECRET,
+        grant_type: 'refresh_token',
+        refresh_token: req.session.passport.user.token
+    }, {
+        headers: { 'Accept': 'application/json' }
+    });
+
+    const { access_token, refresh_token } = response.data;
+    if(refresh_token){
+        req.session.passport.user.token = refresh_token;
+            // Force express-session to save the newly mutated user data
+        await new Promise((resolve, reject) => {
+            req.session.save((err) => (err ? reject(err) : resolve()));
+        });
+    }
+    return(access_token);
+}
+
+
 
