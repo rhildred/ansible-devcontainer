@@ -6,10 +6,11 @@ import httpProxy from 'http-proxy';
 import axios from 'axios';
 import ViteExpress from "vite-express";
 import 'dotenv/config';
-import { refreshToken } from './CRUDDevcontainer.js';
+import { refreshToken, CRUDDevcontainer, updateData, listDevcontainers, deleteDevcontainer, updateDevContainer } from './CRUDDevcontainer.js';
 
 export const FORGEJO_URL = process.env.FORGEJO_URL;
 const DOMAIN = process.env.DOMAIN; // Leading dot is critical for subdomain sharing
+const proxy = httpProxy.createProxyServer({});
 const app = express();
 
 // Trust cloudflared's HTTPS headers
@@ -59,8 +60,9 @@ passport.deserializeUser((user, done) => done(null, user));
 
 // 4. Auth Routes
 app.get('/devcontainers/api/login', async (req, res, next) => {
+  const returnTo = req.session.returnTo || `${req.protocol}://${req.get('host')}${req.path.replace("/devcontainers/api/login", "/devcontainers")}` 
   passport.authenticate('forgejo', { 
-    state:  `${req.protocol}://${req.get('host')}${req.path.replace("/devcontainers/api/login", "/devcontainers")}` 
+    state:  returnTo
   })(req, res, next);
 });
 
@@ -87,6 +89,56 @@ app.get('/devcontainers/api/hello', async (req, res) => {
   `);
 });
 
+app.post('/devcontainers/api', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+  CRUDDevcontainer(req, res);
+});
+
+app.delete('/devcontainers/api/:id', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+  deleteDevcontainer(req, res);
+});
+
+app.post('/devcontainers/api/:id', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+  updateDevContainer(req, res);
+});
+
+app.get('/devcontainers/api', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).send('Unauthorized');
+  await listDevcontainers(req, res);
+});
+
+
+// 5. Proxy Logic
+const getTarget = (host) => {
+  const sHost = host.split(".").shift();
+  const aHost = sHost.split("_");
+  const sPossPort = aHost.pop();
+  if(/^\d+$/.test(sPossPort)){
+    return `http://${aHost.join("_")}:${sPossPort}`
+  }else{
+    return `http://${sHost}:8080`
+  }
+}
+
+app.all(/^(?!\/devcontainers).*$/, async (req, res) => {
+  if (req.isAuthenticated()) {
+    const target = getTarget(req.headers.host);
+    const oUrl = new URL(target);
+    if(req.path == "/"){
+      await updateData({serviceName: oUrl.hostname,username: req.session.passport.user.username});
+    }
+    return proxy.web(req, res, { target });
+  }
+
+  // Not authenticated: Store current canonical URL and redirect
+  req.session.returnTo = `${req.protocol}://${req.get('host')}${req.path}`;
+  req.session.save();
+  res.redirect('/devcontainers/api/login');
+});
+
+
 if(process.env.NODE_ENV == "production"){
   const sBase = "/devcontainers/"
   ViteExpress.config({
@@ -104,3 +156,19 @@ if(process.env.NODE_ENV == "production"){
 }
 
 const server = ViteExpress.listen(app, 8000, () => console.log('Proxy running'));
+
+server.on('upgrade', (req, socket, head) => {
+  // Simple check: Cookies are sent with the upgrade request
+  if (!req.headers.cookie) return socket.destroy();
+
+  const target = getTarget(req.headers.host);
+  proxy.ws(req, socket, head, { target });
+});
+
+proxy.on('error', (err, req, res) => {
+  console.error('Proxy Error:', err.message);
+  if (res.writeHead && !res.headersSent) {
+    res.writeHead(502);
+    res.end('Bad Gateway');
+  }
+});
