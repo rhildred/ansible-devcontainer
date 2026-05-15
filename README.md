@@ -21,7 +21,9 @@ git config local http.extraHeader "Authorization: token your_forgejo_token_here"
 ## TODO
 
 1. finish refresh token and get git username and email in the project
-1. integrate time tracking with getting a new access token every 30 minutes
+1. launch devcontainer without code-server add on
+1. get wordpress working well enough for Joan and Kelly to use it as a content management system
+1. speak with Joan and Kelly
 1. develop custom element for launching, updating, deleting and listing dev containers for a user, repo and branch. Integrate in forgejo
 1. add CUDA drivers
 8. install on gpu server
