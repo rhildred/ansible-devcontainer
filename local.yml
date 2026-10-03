@@ -16,6 +16,10 @@
       - /var/lib/forgejo
       - /var/lib/tabby
       - /var/lib/forgejo-runner
+      # System level configuration directories
+      - /etc/forgejo
+      - /etc/forgejo/ssh
+      
 
     borg_repo: "borgbackup@100.64.X.X:/mnt/borg_storage/repo_skunkworks"
     borg_passphrase: "your_secure_repository_passphrase_here"
