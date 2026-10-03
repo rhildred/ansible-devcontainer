@@ -11,14 +11,15 @@ services:
     stdin_open: true
     user: "${HOST_UID}:${HOST_GID}"
     group_add:
-      - "981"  # Host's docker group GID
+      - "{{ docker_gid }}"
     ports:
-      - "8000:8000"
+      # Bind exclusively to the Tailscale IP interface
+      - "{{ tailscale_ip }}:8000:8000"
     networks:
       - proxy-tier
     environment:
       - NODE_ENV=production
-      - FORGEJO_URL=https://k3p.dev
+      - FORGEJO_URL=http://forgejo:3000
       - DOMAIN=.k3p.dev
       - CALLBACK_URL=https://k3p.dev
       - CLIENT_ID=49eef9d2-d78e-4f6b-b641-ee71f134bb11
@@ -37,8 +38,8 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - "3000:3000"
-      - "2222:22"
+      - "{{ tailscale_ip }}:3000:3000"
+      - "{{ tailscale_ip }}:2222:22"
     networks:
       - proxy-tier
     restart: always
@@ -47,12 +48,11 @@ services:
   tabby:
     image: tabbyml/tabby
     container_name: tabby-server
-    # Update the model path to utilize the heavily optimized MoE structure
     command: serve --model Qwen/Qwen3-Coder-Next-80B-GGUF --device cuda
     volumes:
       - /var/lib/tabby:/data
     ports:
-      - "8080:8080"
+      - "{{ tailscale_ip }}:8080:8080"
     networks:
       - proxy-tier
     environment:
@@ -79,7 +79,7 @@ services:
       - proxy-tier
     environment:
       - FORGEJO_RUNNER_LABELS=ubuntu-latest:docker://node:20-bookworm,gpu-accelerated:docker://nvidia/cuda:12.6.0-base-ubuntu22.04
-      - NVIDIA_VISIBLE_DEVICES=1 # Pins CI/CD jobs strictly to GPU 1
+      - NVIDIA_VISIBLE_DEVICES=1
     deploy:
       resources:
         reservations:
