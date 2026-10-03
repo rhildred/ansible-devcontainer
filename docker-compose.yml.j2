@@ -35,6 +35,9 @@ services:
       - USER_GID=${HOST_GID}
     volumes:
       - /var/lib/forgejo:/data
+      # Map the core config infrastructure cleanly to the host
+      - /etc/forgejo:/data/gitea/conf
+      - /etc/forgejo/ssh:/data/git/.ssh      
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
