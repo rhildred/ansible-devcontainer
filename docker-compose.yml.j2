@@ -3,7 +3,7 @@ services:
   node-proxy:
     build: .
     volumes:
-      - /home/ubuntu:/home/ubuntu
+      - /home/debian:/home/debian
       - /var/run/docker.sock:/var/run/docker.sock
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
