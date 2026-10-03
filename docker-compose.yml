@@ -27,7 +27,7 @@ services:
 
   # 2. SOVEREIGN SOURCE CONTROL (Forgejo)
   forgejo:
-    image: codeberg.org/forgejo/forgejo:10
+    image: codeberg.org/forgejo/forgejo
     container_name: forgejo
     environment:
       - USER_UID=${HOST_UID}
@@ -45,9 +45,10 @@ services:
 
   # 3. SELF-HOSTED AI PAIR PROGRAMMER (Tabby Server)
   tabby:
-    image: tabbyml/tabby:0.19.0
+    image: tabbyml/tabby
     container_name: tabby-server
-    command: serve --model Qwen/Qwen2.5-Coder-7B-Instruct --device cuda
+    # Update the model path to utilize the heavily optimized MoE structure
+    command: serve --model Qwen/Qwen3-Coder-Next-80B-GGUF --device cuda
     volumes:
       - /var/lib/tabby:/data
     ports:
@@ -55,7 +56,7 @@ services:
     networks:
       - proxy-tier
     environment:
-      - NVIDIA_VISIBLE_DEVICES=0 # Pins Tabby strictly to GPU 0
+      - NVIDIA_VISIBLE_DEVICES=0
     deploy:
       resources:
         reservations:
@@ -67,7 +68,7 @@ services:
 
   # 4. HARDWARE-ACCELERATED CI/CD (Forgejo Runner)
   forgejo-runner:
-    image: codeberg.org/forgejo/runner:5.0.1
+    image: codeberg.org/forgejo/runner
     container_name: forgejo-runner
     depends_on:
       - forgejo
