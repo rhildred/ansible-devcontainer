@@ -1,91 +1,149 @@
 ---
-- name: Deploy Forgejo, Coder, and CUDA Environment
+- name: Configure Sovereign Skunkworks Node and Backup Lifecycle
   hosts: localhost
+  connection: local
   become: true
+
   vars:
-    # DYNAMICALLY RESOLVE RUNTIME IDS FROM RUNNING USER
-    runtime_uid: "{{ lookup('pipe', 'id -u') }}"
-    runtime_gid: "{{ lookup('pipe', 'id -g') }}"
+    # Match these with your active user deployment profiles
+    deploy_user: "ubuntu"
+    deploy_group: "ubuntu"
+    host_uid: 1000
+    host_gid: 1000
+    docker_gid: 981
+    # No more hardcoded user paths!
+    compose_project_dir: "{{ playbook_dir }}" 
+
+    # Storage paths matching your preferred /var/lib layouts
+    storage_dirs:
+      - /var/lib/forgejo
+      - /var/lib/tabby
+      - /var/lib/forgejo-runner
+
+    # Target parameters for your isolated Mac target
+    borg_repo: "borgbackup@100.64.X.X:/mnt/borg_storage/repo_skunkworks"
+    borg_passphrase: "your_secure_repository_passphrase_here"
 
   tasks:
-    # 1. Clear previous interrupted dpkg states
-    - name: Fix interrupted package installations
-      command: dpkg --configure -a
-      changed_when: false
-
-    # 2. Setup Prerequisites and Repositories
-    - name: Install prerequisite packages
-      apt:
-        name: [ca-certificates, curl, gnupg]
-        state: present
-        update_cache: yes
-
-
-    - name: Ensure keyrings directory exists
+    - name: Ensure standard service data directories exist with clean ownership
       ansible.builtin.file:
-        path: /etc/apt/keyrings
+        path: "{{ item }}"
         state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
         mode: '0755'
+      loop: "{{ storage_dirs }}"
 
-    - name: Download Docker GPG key
-      ansible.builtin.get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: /etc/apt/keyrings/docker.asc
-        mode: '0644'
-
-    - name: Add Docker repository (Noble)
-      ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
-        state: present
-        filename: docker
-
-    - name: Install Docker Engine
-      ansible.builtin.apt:
+    - name: Ensure host tools are installed
+      ansible.builtin.package:
         name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-buildx-plugin
           - docker-compose-plugin
-        update_cache: yes
-    - name: Ensure the docker group exists
-      ansible.builtin.group:
+          - python3-pip
+          - borgbackup
+        state: present
+
+    # Ensure python dependencies are available for the Ansible docker modules
+    - name: Ensure Docker python SDK is installed
+      ansible.builtin.pip:
         name: docker
         state: present
 
-    - name: Add the current user to the docker group
-      ansible.builtin.user:
-        # Use ansible_user (the user used for login) or lookup env USER
-        name: "{{ ansible_user | default(lookup('env', 'USER')) }}"
-        groups: docker
-        append: yes
-      notify: refresh_ssh
-    - name: Pull and bring up the Docker Compose stack
-      community.docker.docker_compose_v2:
-        project_src: .
-        state: present
-        pull: always
-      register: compose_output
+    - name: Ensure project directory exists
+      ansible.builtin.file:
+        path: "{{ compose_project_dir }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: '0755'
 
-    - name: Debug compose service deployment output
-      ansible.builtin.debug:
-        var: compose_output
+  # 2. Drop the redundant .env file to the checked-out folder
+  - name: Deploy project .env file
+    ansible.builtin.copy:
+      dest: "{{ compose_project_dir }}/.env"
+      owner: "{{ deploy_user }}"
+      group: "{{ deploy_group }}"
+      mode: '0600'
+      content: |
+        HOST_UID={{ host_uid }}
+        HOST_GID={{ host_gid }}
+        HOST_DOCKER_GID={{ docker_gid }}
 
-    - name: Install Forgejo via EasyForgejo script
-      shell: curl -sSL https://wkoszek.github.io/easyforgejo/install.sh | bash | tail -23 > FORGEJO.md
-      args:
-        creates: /usr/local/bin/forgejo
+  # 3. Spin up the containers right out of the repository checkout folder
+  - name: Run docker compose up -d
+    community.docker.docker_compose_v2:
+      project_src: "{{ compose_project_dir }}"
+      state: present
+      pull: always
+    become: true
+    become_user: "{{ deploy_user }}"
+    
+  - name: Deploy Host Backup Execution Script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/skunkworks-backup.sh
+        owner: root
+        group: root
+        mode: '0700'
+        content: |
+          #!/bin/bash
+          set -euo pipefail
 
-    - name: Get status of the file
-      ansible.builtin.stat:
-        path: FORGEJO.md
-      register: file_info
+          export BORG_PASSPHRASE="{{ borg_passphrase }}"
+          REPOSITORY="{{ borg_repo }}"
+          BACKUP_DIRS="{{ storage_dirs | join(' ') }}"
+          ARCHIVE_NAME="gpu-server-$(date +'%Y-%m-%d_%H%M%S')"
 
-    - name: Debug if file exists
-      ansible.builtin.debug:
-        msg: "Read FORGEJO.md for further instructions."
-      when: file_info.stat.exists
+          echo "=== Freezing Stack Operations ==="
+          docker pause forgejo tabby-server forgejo-runner node-proxy
 
-  handlers:
-    - name: refresh_ssh
-      ansible.builtin.meta: reset_connection
+          # Unpause fallback trigger in case execution breaks mid-run
+          trap 'echo "Forcing cluster resume..."; docker unpause forgejo tabby-server forgejo-runner node-proxy' INT TERM EXIT
+
+          echo "Executing Borg Snapshot: ${ARCHIVE_NAME}..."
+          borg create --stats --compression lz4 "${REPOSITORY}::${ARCHIVE_NAME}" ${BACKUP_DIRS}
+
+          echo "=== Restoring Stack Operations ==="
+          docker unpause forgejo tabby-server forgejo-runner node-proxy
+          trap - INT TERM EXIT
+
+          echo "Pruning historical logs..."
+          borg prune --list --keep-daily=7 --keep-weekly=4 --keep-monthly=6 "${REPOSITORY}"
+
+    - name: Template Systemd Backup Service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/skunkworks-backup.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Sovereign Pipeline Freeze Backup
+          After=docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/skunkworks-backup.sh
+
+    - name: Template Systemd Backup Timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/skunkworks-backup.timer
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Daily Backup Loop Trigger
+
+          [Timer]
+          OnCalendar=*-*-* 03:00:00
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Activate Systemd Backup Timer Loop
+      ansible.builtin.systemd_service:
+        name: skunkworks-backup.timer
+        state: started
+        enabled: true
+        daemon_reload: true
