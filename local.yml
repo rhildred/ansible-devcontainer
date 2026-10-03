@@ -5,8 +5,8 @@
   become: true
 
   vars:
-    deploy_user: "ubuntu"
-    deploy_group: "ubuntu"
+    deploy_user: "debian"
+    deploy_group: "debian"
     host_uid: 1000
     host_gid: 1000
     docker_gid: 981
