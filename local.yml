@@ -5,26 +5,37 @@
   become: true
 
   vars:
-    # Match these with your active user deployment profiles
     deploy_user: "ubuntu"
     deploy_group: "ubuntu"
     host_uid: 1000
     host_gid: 1000
     docker_gid: 981
-    # No more hardcoded user paths!
     compose_project_dir: "{{ playbook_dir }}" 
 
-    # Storage paths matching your preferred /var/lib layouts
     storage_dirs:
       - /var/lib/forgejo
       - /var/lib/tabby
       - /var/lib/forgejo-runner
 
-    # Target parameters for your isolated Mac target
     borg_repo: "borgbackup@100.64.X.X:/mnt/borg_storage/repo_skunkworks"
     borg_passphrase: "your_secure_repository_passphrase_here"
 
   tasks:
+    - name: Gather target network interface facts
+      ansible.builtin.gather_facts:
+        gather_subset:
+          - network
+
+    # Dynamically query the tailscale interface network configurations 
+    - name: Determine Tailscale mesh IP address
+      ansible.builtin.set_fact:
+        tailscale_ip: "{{ ansible_facts['tailscale0']['ipv4']['address'] | default(ansible_facts['tailscale_0']['ipv4']['address']) }}"
+      failed_when: tailscale_ip is not defined
+
+    - name: Debug verified Tailscale target IP binding
+      ansible.builtin.debug:
+        msg: "Stack services will be locked down exclusively to interface IP: {{ tailscale_ip }}"
+
     - name: Ensure standard service data directories exist with clean ownership
       ansible.builtin.file:
         path: "{{ item }}"
@@ -42,42 +53,40 @@
           - borgbackup
         state: present
 
-    # Ensure python dependencies are available for the Ansible docker modules
     - name: Ensure Docker python SDK is installed
       ansible.builtin.pip:
         name: docker
         state: present
 
-    - name: Ensure project directory exists
-      ansible.builtin.file:
-        path: "{{ compose_project_dir }}"
-        state: directory
+    - name: Deploy project .env file
+      ansible.builtin.copy:
+        dest: "{{ compose_project_dir }}/.env"
         owner: "{{ deploy_user }}"
         group: "{{ deploy_group }}"
-        mode: '0755'
+        mode: '0600'
+        content: |
+          HOST_UID={{ host_uid }}
+          HOST_GID={{ host_gid }}
+          HOST_DOCKER_GID={{ docker_gid }}
 
-  # 2. Drop the redundant .env file to the checked-out folder
-  - name: Deploy project .env file
-    ansible.builtin.copy:
-      dest: "{{ compose_project_dir }}/.env"
-      owner: "{{ deploy_user }}"
-      group: "{{ deploy_group }}"
-      mode: '0600'
-      content: |
-        HOST_UID={{ host_uid }}
-        HOST_GID={{ host_gid }}
-        HOST_DOCKER_GID={{ docker_gid }}
+    # Compiles the Jinja2 template into a fully evaluated docker-compose.yml file
+    - name: Generate Tailscale-locked Docker Compose configuration
+      ansible.builtin.template:
+        src: "{{ compose_project_dir }}/docker-compose.yml.j2"
+        dest: "{{ compose_project_dir }}/docker-compose.yml"
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: '0644'
 
-  # 3. Spin up the containers right out of the repository checkout folder
-  - name: Run docker compose up -d
-    community.docker.docker_compose_v2:
-      project_src: "{{ compose_project_dir }}"
-      state: present
-      pull: always
-    become: true
-    become_user: "{{ deploy_user }}"
-    
-  - name: Deploy Host Backup Execution Script
+    - name: Run docker compose up -d
+      community.docker.docker_compose_v2:
+        project_src: "{{ compose_project_dir }}"
+        state: present
+        pull: always
+      become: true
+      become_user: "{{ deploy_user }}"
+
+    - name: Deploy Host Backup Execution Script
       ansible.builtin.copy:
         dest: /usr/local/bin/skunkworks-backup.sh
         owner: root
@@ -95,7 +104,6 @@
           echo "=== Freezing Stack Operations ==="
           docker pause forgejo tabby-server forgejo-runner node-proxy
 
-          # Unpause fallback trigger in case execution breaks mid-run
           trap 'echo "Forcing cluster resume..."; docker unpause forgejo tabby-server forgejo-runner node-proxy' INT TERM EXIT
 
           echo "Executing Borg Snapshot: ${ARCHIVE_NAME}..."
