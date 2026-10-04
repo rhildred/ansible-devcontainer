@@ -1,7 +1,7 @@
 services:
   # 1. SOVEREIGN SOURCE CONTROL (Forgejo)
   forgejo:
-    image: codeberg.org/forgejo/forgejo
+    image: codeberg.org/forgejo/forgejo:16
     container_name: forgejo
     environment:
       - USER_UID=${HOST_UID}
@@ -19,7 +19,7 @@ services:
 
   # 2. HARDWARE-ACCELERATED CI/CD (Forgejo Runner)
   forgejo-runner:
-    image: codeberg.org/forgejo/runner
+    image: codeberg.org/forgejo/runner:13
     container_name: forgejo-runner
     depends_on:
       - forgejo
