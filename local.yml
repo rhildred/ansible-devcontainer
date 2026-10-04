@@ -8,11 +8,10 @@
     deploy_user: "debian"
     deploy_group: "debian"
     host_uid: 1000
-    host_gid: 1000
+    host_gid: 981
     docker_gid: 981
     compose_project_dir: "{{ playbook_dir }}" 
 
-    # Focused strictly on Forgejo, the runner, and system configuration blocks
     storage_dirs:
       - /var/lib/forgejo
       - /var/lib/forgejo-runner
@@ -26,13 +25,14 @@
           - network
           - local
 
-    # 1. SECRETS VALIDATION: Pull parameters directly from /etc/ansible/facts.d/secrets.fact
+    # 1. SUB-KEY VALIDATION: Map cleanly to your nested 'node_secrets' dictionary keys
     - name: Ensure custom secrets factory parameters are accessible
       ansible.builtin.assert:
         that:
-          - ansible_local.secrets.borg_repo_host is defined
-          - ansible_local.secrets.borg_passphrase is defined
-        fail_msg: "CRITICAL: Check /etc/ansible/facts.d/secrets.fact. Missing keys!"
+          - ansible_local.secrets.node_secrets.borg_repo_host is defined
+          - ansible_local.secrets.node_secrets.borg_passphrase is defined
+          - ansible_local.secrets.node_secrets.forgejo_url is defined
+        fail_msg: "CRITICAL: Check /etc/ansible/facts.d/secrets.fact. Missing keys under node_secrets!"
 
     # 2. INTERFACE RESOLUTION: Dynamically query the tailscale interface network configurations 
     - name: Determine Tailscale mesh IP address
@@ -94,7 +94,7 @@
       become: true
       become_user: "{{ deploy_user }}"
 
-    # 3. BACKUP PIPELINE: Hostname validation + Pauses only Forgejo & Runner
+    # 3. BACKUP PIPELINE: Extracts values directly via the verified nested keys
     - name: Deploy Host Backup Execution Script
       ansible.builtin.copy:
         dest: /usr/local/bin/skunkworks-backup.sh
@@ -105,8 +105,8 @@
           #!/bin/bash
           set -euo pipefail
 
-          export BORG_PASSPHRASE="{{ ansible_local.secrets.borg_passphrase }}"
-          HOST_NAME="{{ ansible_local.secrets.borg_repo_host }}"
+          export BORG_PASSPHRASE="{{ ansible_local.secrets.node_secrets.borg_passphrase }}"
+          HOST_NAME="{{ ansible_local.secrets.node_secrets.borg_repo_host }}"
           REPOSITORY="borgbackup@${HOST_NAME}:/mnt/borg_storage/repo_skunkworks"
           
           BACKUP_DIRS="/var/lib/forgejo /var/lib/forgejo-runner /etc/forgejo"
