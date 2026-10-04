@@ -12,25 +12,29 @@
     docker_gid: 981
     compose_project_dir: "{{ playbook_dir }}" 
 
+    # Focused strictly on Forgejo, the runner, and system configuration blocks
     storage_dirs:
       - /var/lib/forgejo
-      - /var/lib/tabby
       - /var/lib/forgejo-runner
-      # System level configuration directories
       - /etc/forgejo
       - /etc/forgejo/ssh
-      
-
-    borg_repo: "borgbackup@100.64.X.X:/mnt/borg_storage/repo_skunkworks"
-    borg_passphrase: "your_secure_repository_passphrase_here"
 
   tasks:
-    - name: Gather target network interface facts
+    - name: Gather target network interface and custom local facts
       ansible.builtin.gather_facts:
         gather_subset:
           - network
+          - local
 
-    # Dynamically query the tailscale interface network configurations 
+    # 1. SECRETS VALIDATION: Pull parameters directly from /etc/ansible/facts.d/secrets.fact
+    - name: Ensure custom secrets factory parameters are accessible
+      ansible.builtin.assert:
+        that:
+          - ansible_local.secrets.borg_repo_host is defined
+          - ansible_local.secrets.borg_passphrase is defined
+        fail_msg: "CRITICAL: Check /etc/ansible/facts.d/secrets.fact. Missing keys!"
+
+    # 2. INTERFACE RESOLUTION: Dynamically query the tailscale interface network configurations 
     - name: Determine Tailscale mesh IP address
       ansible.builtin.set_fact:
         tailscale_ip: "{{ ansible_facts['tailscale0']['ipv4']['address'] | default(ansible_facts['tailscale_0']['ipv4']['address']) }}"
@@ -90,6 +94,7 @@
       become: true
       become_user: "{{ deploy_user }}"
 
+    # 3. BACKUP PIPELINE: Hostname validation + Pauses only Forgejo & Runner
     - name: Deploy Host Backup Execution Script
       ansible.builtin.copy:
         dest: /usr/local/bin/skunkworks-backup.sh
@@ -100,21 +105,37 @@
           #!/bin/bash
           set -euo pipefail
 
-          export BORG_PASSPHRASE="{{ borg_passphrase }}"
-          REPOSITORY="{{ borg_repo }}"
-          BACKUP_DIRS="{{ storage_dirs | join(' ') }}"
+          export BORG_PASSPHRASE="{{ ansible_local.secrets.borg_passphrase }}"
+          HOST_NAME="{{ ansible_local.secrets.borg_repo_host }}"
+          REPOSITORY="borgbackup@${HOST_NAME}:/mnt/borg_storage/repo_skunkworks"
+          
+          BACKUP_DIRS="/var/lib/forgejo /var/lib/forgejo-runner /etc/forgejo"
           ARCHIVE_NAME="gpu-server-$(date +'%Y-%m-%d_%H%M%S')"
 
-          echo "=== Freezing Stack Operations ==="
-          docker pause forgejo tabby-server forgejo-runner node-proxy
+          echo "=== Verifying Network Path to Target: ${HOST_NAME} ==="
+          for i in {1..10}; do
+              if getent hosts "$HOST_NAME" > /dev/null 2>&1; then
+                  echo "Network path verified. Continuing..."
+                  break
+              fi
+              echo "Waiting for ${HOST_NAME} resolution to come online..."
+              sleep 3
+              if [ $i -eq 10 ]; then
+                  echo "CRITICAL: Could not resolve target backup host ${HOST_NAME} over Tailscale. Aborting."
+                  exit 1
+              fi
+          done
 
-          trap 'echo "Forcing cluster resume..."; docker unpause forgejo tabby-server forgejo-runner node-proxy' INT TERM EXIT
+          echo "=== Freezing Stack Operations ==="
+          docker pause forgejo forgejo-runner
+
+          trap 'echo "Forcing cluster resume..."; docker unpause forgejo forgejo-runner' INT TERM EXIT
 
           echo "Executing Borg Snapshot: ${ARCHIVE_NAME}..."
           borg create --stats --compression lz4 "${REPOSITORY}::${ARCHIVE_NAME}" ${BACKUP_DIRS}
 
           echo "=== Restoring Stack Operations ==="
-          docker unpause forgejo tabby-server forgejo-runner node-proxy
+          docker unpause forgejo forgejo-runner
           trap - INT TERM EXIT
 
           echo "Pruning historical logs..."
