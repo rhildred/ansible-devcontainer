@@ -1,7 +1,7 @@
 services:
-  # 1. SOVEREIGN SOURCE CONTROL (Forgejo)
+  # 1. SOVEREIGN SOURCE CONTROL (Forgejo Only)
   forgejo:
-    image: data.forgejo.org/forgejo/forgejo:16
+    image: codeberg.org/forgejo/forgejo
     container_name: forgejo
     environment:
       - USER_UID=${HOST_UID}
@@ -15,25 +15,4 @@ services:
     ports:
       - "{{ tailscale_ip }}:3000:3000"
       - "{{ tailscale_ip }}:2222:22"
-    restart: always
-
-  # 2. HARDWARE-ACCELERATED CI/CD (Forgejo Runner)
-  forgejo-runner:
-    image: data.forgejo.org/forgejo/runner:13
-    container_name: forgejo-runner
-    depends_on:
-      - forgejo
-    volumes:
-      - /var/lib/forgejo-runner:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - FORGEJO_RUNNER_LABELS=ubuntu-latest:docker://node:20-bookworm,gpu-accelerated:docker://nvidia/cuda:12.6.0-base-ubuntu22.04
-      - NVIDIA_VISIBLE_DEVICES=1 # Isolates pipelines strictly to your second RTX A4000 (GPU 1)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     restart: always
