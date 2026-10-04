@@ -1,7 +1,7 @@
 services:
   # 1. SOVEREIGN SOURCE CONTROL (Forgejo Only)
   forgejo:
-    image: codeberg.org/forgejo/forgejo
+    image: codeberg.org/forgejo/forgejo:16
     container_name: forgejo
     environment:
       - USER_UID=${HOST_UID}
